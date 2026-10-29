@@ -1,0 +1,2349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Quill</title>
+<meta name="description" content="Quill: one calm, ad-free inbox for every account.">
+<meta name="theme-color" content="#F3EEFF">
+<script>
+/* Decide before first paint whether this is the first launch, so the app never flashes before the splash. */
+(function () {
+  var first = false;
+  try { first = !localStorage.getItem('quill.splash'); } catch (e) { first = false; }
+  if (first) document.documentElement.classList.add('splash');
+})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* Quill. Soft glass panels over a quiet background, few borders, one accent.
+   Text colors are tuned to pass 4.5:1 on the glass panels over every background. */
+:root {
+  color-scheme: light;
+  --font: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+
+  --ink: #1C1B22;
+  --ink-2: #4A4756;
+  --ink-3: #67636F;      /* muted text on glass */
+  --ink-raw: #5B5767;    /* muted text straight on the background */
+  --body: #2A2833;
+
+  --accent: #7A6CF0;     /* fills, rings and dots only, never small text */
+  --accent-2: #5B4FD6;   /* accent text on glass */
+  --accent-3: #3E33B8;   /* accent text on lilac */
+  --lilac: #EFEBFF;
+  --accent-soft: rgba(122, 108, 240, .12);
+  --accent-wash: rgba(122, 108, 240, .08);
+  --grad: linear-gradient(135deg, #6656E3, #A9507E);
+  --brand: linear-gradient(135deg, #7A6CF0, #F2A6B8);
+
+  --ok: #2F6E4D; --ok-soft: #E3F5EC;
+  --warn: #8A5300; --warn-soft: #FFF1DB;
+  --bad: #B3261E; --bad-soft: #FDE8E6;
+
+  --glass: rgba(255, 255, 255, .62);
+  --glass-2: rgba(255, 255, 255, .76);
+  --glass-3: rgba(255, 255, 255, .92);
+  --edge: rgba(255, 255, 255, .75);
+  --line: rgba(28, 27, 34, .07);
+  --hover: rgba(28, 27, 34, .045);
+  --field-line: rgba(28, 27, 34, .1);
+  --track-off: #8E8A9C;
+
+  --shadow: 0 8px 30px rgba(28, 27, 34, .06);
+  --shadow-2: 0 6px 18px rgba(28, 27, 34, .07);
+  --shadow-3: 0 18px 50px rgba(28, 27, 34, .16);
+  --blur: blur(22px) saturate(150%);
+  --ring: 0 0 0 3px rgba(91, 79, 214, .32);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  font: 14px/1.45 var(--font);
+  color: var(--ink);
+  background: #F7F5F2;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; }
+h1, h2, h3, p { margin: 0; }
+ul { margin: 0; padding: 0; list-style: none; }
+:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.grow { flex: 1; }
+
+/* ---------- backgrounds: Aurora and Mist drift slowly, Soft and Plain stay still ---------- */
+#bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: #F7F5F2; }
+#bg .layer { position: absolute; top: 0; left: 0; }
+#bg.bg-plain .layer { display: none; }
+#bg.bg-soft .layer { width: 100%; height: 100%; background: linear-gradient(160deg, #F3EEFF 0%, #FFF3F0 55%, #EBF8F4 100%); }
+#bg.bg-aurora .layer {
+  width: 300%; height: 100%;
+  background: linear-gradient(120deg, #E4DEFF 0%, #FFE3EE 33%, #D9F5EC 66%, #E4DEFF 100%);
+  animation: aurora 24s ease-in-out infinite; will-change: transform;
+}
+#bg.bg-mist { background: #F5F3FB; }
+#bg.bg-mist .layer {
+  width: 140%; height: 140%;
+  background:
+    radial-gradient(55% 50% at 15% 15%, #D6CEFF, transparent 70%),
+    radial-gradient(45% 45% at 85% 25%, #FFD6E5, transparent 70%),
+    radial-gradient(55% 50% at 50% 95%, #C9F2E3, transparent 70%);
+  animation: drift 32s ease-in-out infinite alternate; will-change: transform;
+}
+@keyframes aurora { 0%, 100% { transform: translate3d(0, 0, 0); } 50% { transform: translate3d(-66.667%, 0, 0); } }
+@keyframes drift { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-28.57%, -28.57%, 0); } }
+
+/* the small previews in Settings */
+.sw { display: block; height: 96px; border-radius: 14px; }
+.sw-plain { background: #F7F5F2; box-shadow: inset 0 0 0 1px var(--line); }
+.sw-soft { background: linear-gradient(160deg, #F3EEFF 0%, #FFF3F0 55%, #EBF8F4 100%); }
+.sw-aurora { background: linear-gradient(120deg, #E4DEFF, #FFE3EE, #D9F5EC, #E4DEFF); background-size: 300% 300%; animation: sw-aurora 24s ease infinite; }
+.sw-mist {
+  background: radial-gradient(55% 50% at 15% 15%, #D6CEFF, transparent 70%), radial-gradient(45% 45% at 85% 25%, #FFD6E5, transparent 70%), radial-gradient(55% 50% at 50% 95%, #C9F2E3, transparent 70%), #F5F3FB;
+  background-size: 140% 140%; animation: sw-drift 32s ease-in-out infinite alternate;
+}
+@keyframes sw-aurora { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+@keyframes sw-drift { from { background-position: 0% 0%; } to { background-position: 100% 100%; } }
+
+/* ---------- surfaces ---------- */
+#app { position: relative; z-index: 1; }
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  border: 1px solid var(--edge);
+  box-shadow: var(--shadow);
+}
+.card {
+  background: var(--glass-2);
+  -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  border: 1px solid var(--edge);
+  border-radius: 22px;
+}
+
+/* ---------- controls ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 40px; padding: 0 16px; border-radius: 14px; border: 0;
+  background: var(--hover); color: var(--ink); font-weight: 500; white-space: nowrap;
+}
+.btn:hover { background: rgba(28, 27, 34, .08); }
+.btn-dark { background: var(--ink); color: #FFFFFF; font-weight: 600; }
+.btn-dark:hover { background: #33313C; }
+.btn-grad { background: var(--grad); color: #FFFFFF; font-weight: 600; }
+.btn-grad:hover { background: var(--grad); filter: brightness(1.06); }
+.btn-ghost { background: transparent; color: var(--ink-2); }
+.btn-white { background: rgba(255, 255, 255, .8); box-shadow: inset 0 0 0 1px var(--field-line); }
+.btn-white:hover { background: #FFFFFF; }
+.btn-danger { background: transparent; color: var(--bad); }
+.btn-danger:hover { background: var(--bad-soft); }
+.btn.pill { height: 34px; padding: 0 14px; border-radius: 17px; font-size: 13px; }
+.btn.lg { height: 44px; padding: 0 22px; border-radius: 16px; font-size: 15px; }
+.btn[aria-busy="true"] { opacity: .7; }
+.btn:disabled { opacity: .55; }
+
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 38px; height: 38px; border-radius: 19px; border: 0; padding: 0;
+  background: var(--hover); color: var(--ink);
+}
+.icon-btn:hover { background: rgba(28, 27, 34, .08); }
+.icon-btn.sm { width: 32px; height: 32px; border-radius: 16px; background: transparent; color: var(--ink-2); }
+.icon-btn.sm:hover { background: var(--hover); }
+.icon-btn:disabled { opacity: .35; background: transparent; }
+.icon-btn[aria-pressed="true"] { color: var(--accent-2); }
+
+.chip {
+  position: relative; display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 14px; border-radius: 16px; border: 0;
+  background: rgba(255, 255, 255, .7); font-size: 13px; white-space: nowrap;
+}
+.chip::after { content: ''; position: absolute; inset: -6px 0; }  /* a 44px tall touch target */
+.chip:hover { background: #FFFFFF; }
+.chip[aria-pressed="true"] { background: var(--ink); color: #FFFFFF; font-weight: 500; }
+.chip.lilac { background: var(--lilac); color: var(--accent-3); }
+.chip.lilac:hover { background: #E4DEFF; }
+.chip .dot { width: 7px; height: 7px; border-radius: 4px; }
+
+.tag {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  height: 22px; padding: 0 8px; border-radius: 11px;
+  font-size: 12px; font-weight: 500; background: var(--lilac); color: var(--accent-3); white-space: nowrap;
+}
+.tag.ok { background: var(--ok-soft); color: var(--ok); }
+.tag.warn { background: var(--warn-soft); color: var(--warn); }
+.tag.bad { background: var(--bad-soft); color: var(--bad); }
+.tag.grey { background: rgba(28, 27, 34, .06); color: var(--ink-2); }
+
+.switch {
+  position: relative; flex: none; width: 48px; height: 28px; padding: 0; border: 0; border-radius: 14px;
+  background: var(--track-off); transition: background .18s ease;
+}
+.switch::before { content: ''; position: absolute; inset: -8px -2px; }
+.switch::after {
+  content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 11px;
+  background: #FFFFFF; box-shadow: 0 1px 2px rgba(0, 0, 0, .18); transition: transform .18s ease;
+}
+.switch[aria-checked="true"] { background: var(--accent); }
+.switch[aria-checked="true"]::after { transform: translateX(20px); }
+.switch[aria-disabled="true"] { cursor: not-allowed; }
+
+.radio {
+  appearance: none; -webkit-appearance: none; flex: none; margin: 0;
+  width: 22px; height: 22px; border-radius: 11px; border: 2px solid var(--track-off); background: #FFFFFF;
+  transition: border-width .15s ease, border-color .15s ease;
+}
+.radio:checked { border: 7px solid var(--accent); }
+.check { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); flex: none; }
+
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field > label, .field > .flabel { font-size: 12px; color: var(--ink-2); }
+.input {
+  width: 100%; height: 40px; padding: 0 12px; border-radius: 12px;
+  border: 1px solid var(--field-line); background: #FFFFFF; font-size: 14px; color: var(--ink);
+}
+textarea.input { height: auto; padding: 10px 12px; resize: vertical; line-height: 1.5; }
+select.input { padding-right: 32px; appearance: none; -webkit-appearance: none;
+  background: #FFFFFF url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%234A4756' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center; }
+.input:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+.input::placeholder, textarea::placeholder { color: #8A8696; }
+
+.link-btn { border: 0; background: transparent; padding: 6px 12px; border-radius: 10px; color: var(--accent-2); font-weight: 600; font-size: 13px; text-align: left; }
+.link-btn:hover { background: var(--accent-wash); }
+
+/* ---------- menus ---------- */
+.menu-wrap { position: relative; display: inline-flex; }
+.menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; min-width: 220px;
+  display: flex; flex-direction: column; padding: 6px; border-radius: 16px;
+  background: var(--glass-3); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  border: 1px solid var(--edge); box-shadow: var(--shadow-3);
+}
+.menu.up { top: auto; bottom: calc(100% + 6px); }
+.menu.left { right: auto; left: 0; }
+.menu button {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  min-height: 40px; padding: 8px 12px; border: 0; border-radius: 10px; background: transparent; text-align: left; white-space: nowrap;
+}
+.menu button:hover, .menu button:focus-visible { background: var(--hover); outline: none; }
+.menu .hint { color: var(--ink-3); font-size: 12px; }
+
+/* ---------- mail: three panes ---------- */
+.shell { display: flex; gap: 16px; height: 100vh; height: 100dvh; padding: 16px; }
+.sidebar {
+  width: 232px; flex: none; display: flex; flex-direction: column; gap: 14px;
+  padding: 18px; border-radius: 24px; overflow-y: auto; overscroll-behavior: contain;
+  background: rgba(255, 255, 255, .7);
+}
+.sidebar > * { flex-shrink: 0; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 2px 0 2px 6px; }
+.brand-tile { width: 30px; height: 30px; border-radius: 10px; background: var(--brand); flex: none; }
+.brand-name { font-size: 18px; font-weight: 600; letter-spacing: -.01em; flex: 1; }
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+  min-height: 34px; padding: 6px 12px; border: 0; border-radius: 12px; background: transparent; color: var(--ink-2); text-align: left;
+}
+.nav-item:hover { background: var(--hover); }
+.nav-item[aria-current="page"] { background: var(--accent-soft); color: var(--accent-3); font-weight: 600; }
+.nav-item .count { color: var(--ink-3); font-size: 13px; font-weight: 400; }
+.nav-item[aria-current="page"] .count { color: inherit; font-weight: 600; }
+.nav-item .lead { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.nav-item .lead span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-group { display: flex; flex-direction: column; gap: 4px; }
+.side-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); padding: 0 12px 2px; }
+.acct-dot { width: 8px; height: 8px; border-radius: 4px; flex: none; }
+.rule-count { padding: 1px 8px; border-radius: 10px; background: rgba(28, 27, 34, .06); font-size: 12px; color: var(--ink-2); }
+.safety-card { margin-top: auto; padding: 14px; border-radius: 16px; background: var(--accent-wash); display: flex; flex-direction: column; gap: 4px; }
+.safety-card .k { font-size: 12px; font-weight: 600; color: var(--accent-2); }
+.safety-card .n { font-size: 28px; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; }
+.safety-card p { font-size: 12px; color: var(--ink-3); }
+.safety-card .link-btn { align-self: flex-start; margin: 4px 0 0 -12px; }
+@media (max-height: 940px) and (min-width: 1100px) { .safety-card p { display: none; } }
+
+.list { width: 380px; flex: none; display: flex; flex-direction: column; border-radius: 24px; overflow: hidden; }
+.list-head { padding: 18px 18px 10px; display: flex; flex-direction: column; gap: 12px; }
+.list-title { display: flex; align-items: center; gap: 10px; }
+.list-title h1 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.search input { width: 100%; height: 40px; padding: 0 14px; border: 0; border-radius: 14px; background: rgba(255, 255, 255, .85); font-size: 14px; }
+.search input:focus { outline: none; box-shadow: var(--ring); }
+.banner {
+  display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; border-radius: 12px;
+  font-size: 12px; color: var(--accent-2); background: var(--accent-wash);
+}
+.banner span { flex: 1; }
+.banner .link-btn { padding: 4px 10px; font-size: 12px; }
+.blocked-banner { display: none; align-items: center; gap: 10px; padding: 10px 10px 10px 12px; border-radius: 18px; background: rgba(255, 255, 255, .75); }
+.blocked-banner .ico { width: 30px; height: 30px; border-radius: 10px; background: var(--lilac); color: var(--accent-2); display: flex; align-items: center; justify-content: center; flex: none; }
+.blocked-banner span { flex: 1; font-size: 13px; color: var(--ink-2); }
+.blocked-banner .link-btn { font-size: 12px; }
+
+.rows { flex: 1; overflow-y: auto; padding: 4px 8px 12px; display: flex; flex-direction: column; gap: 2px; overscroll-behavior: contain; }
+.row {
+  display: flex; gap: 12px; width: 100%; padding: 12px; border: 0; border-radius: 16px;
+  background: transparent; text-align: left; color: var(--ink);
+}
+.row:hover { background: rgba(255, 255, 255, .55); }
+.row[aria-current="true"] { background: rgba(255, 255, 255, .95); box-shadow: var(--shadow-2); }
+.avatar {
+  display: flex; align-items: center; justify-content: center; flex: none;
+  width: 40px; height: 40px; border-radius: 20px; font-weight: 600; font-size: 13px; color: var(--ink);
+}
+.avatar.lg { width: 48px; height: 48px; border-radius: 24px; font-size: 15px; }
+.row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.row-top { display: flex; align-items: center; gap: 6px; }
+.row-from, .row-subj, .row-prev { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-from { flex: 1; }
+.row-time { font-size: 12px; color: var(--ink-3); flex: none; }
+.row-ico { display: inline-flex; color: var(--ink-3); flex: none; }
+.row-ico.flag { color: var(--warn); }
+.row-ico.star { color: var(--accent-2); }
+.row-prev { font-size: 13px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
+.row-prev .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.row-prev .tag { height: 18px; font-size: 11px; padding: 0 6px; }
+.row.unread .row-from, .row.unread .row-subj { font-weight: 600; }
+.row-dot { width: 8px; height: 8px; border-radius: 4px; margin-top: 6px; flex: none; }
+.empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 40px 24px; text-align: center; color: var(--ink-3); }
+.empty strong { color: var(--ink); font-weight: 600; font-size: 15px; }
+
+.reader {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 18px;
+  padding: 22px 28px; border-radius: 24px; overflow-y: auto; overscroll-behavior: contain;
+}
+.toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sender { display: flex; align-items: center; gap: 12px; }
+.sender .who { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.sender .name { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sender .meta { font-size: 13px; color: var(--ink-3); overflow-wrap: anywhere; }
+.vip-btn { height: 30px; padding: 0 12px; border-radius: 15px; border: 0; background: var(--hover); color: var(--ink-2); font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.vip-btn[aria-pressed="true"] { background: var(--lilac); color: var(--accent-3); }
+.subject { font-size: 24px; font-weight: 600; letter-spacing: -.02em; line-height: 1.25; outline: none; }
+.tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.tags .via { font-size: 12px; color: var(--ink-3); }
+.summary { display: flex; flex-direction: column; gap: 4px; padding: 16px; border-radius: 18px; background: var(--accent-wash); }
+.summary .k { font-size: 12px; font-weight: 600; color: var(--accent-2); display: flex; align-items: center; gap: 6px; }
+.notice-card { display: flex; gap: 12px; padding: 14px 16px; border-radius: 18px; background: var(--warn-soft); color: var(--warn); }
+.notice-card.bad { background: var(--bad-soft); color: var(--bad); }
+.notice-card .txt { display: flex; flex-direction: column; gap: 4px; color: var(--ink); font-size: 13px; }
+.notice-card .txt strong { font-size: 14px; }
+.notice-card ul { padding-left: 18px; list-style: disc; color: var(--ink-2); }
+.mail-body { font-size: 15px; line-height: 1.7; color: var(--body); max-width: 640px; overflow-wrap: anywhere; }
+.mail-body p { margin: 0 0 12px; }
+.mail-body p:last-child { margin: 0; }
+.mail-body a { color: var(--accent-2); }
+.dead-link { color: var(--ink-3); text-decoration: line-through; text-decoration-color: rgba(28, 27, 34, .3); }
+.files { display: flex; flex-wrap: wrap; gap: 8px; }
+.file { display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 8px; border-radius: 14px; background: rgba(255, 255, 255, .85); min-width: 0; max-width: 100%; }
+.file .ico { width: 40px; height: 40px; border-radius: 10px; background: var(--lilac); color: var(--accent-3); display: flex; align-items: center; justify-content: center; flex: none; }
+.file .ico.bad { background: var(--bad-soft); color: var(--bad); }
+.file .nm { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file .sz { font-size: 12px; color: var(--ink-3); }
+.file .info { min-width: 0; display: flex; flex-direction: column; }
+.quick { display: flex; gap: 8px; flex-wrap: wrap; }
+.reply-bar {
+  position: sticky; bottom: 0; z-index: 2;
+  margin-top: auto; display: flex; align-items: center; gap: 10px;
+  padding: 8px 8px 8px 18px; border-radius: 20px; background: rgba(255, 255, 255, .85);
+}
+.reply-bar:focus-within { box-shadow: var(--ring); }
+.reply-bar input { flex: 1; min-width: 0; height: 40px; border: 0; background: transparent; font-size: 14px; outline: none; }
+.reply-bar input::placeholder { color: #75717F; }
+
+/* ---------- pages: compose and settings ---------- */
+.page { min-height: 100vh; min-height: 100dvh; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.topbar {
+  position: sticky; top: 16px; z-index: 10;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px; border-radius: 20px; background: rgba(255, 255, 255, .72);
+}
+.topbar .title { font-size: 16px; font-weight: 600; }
+.back {
+  display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px 0 8px;
+  border: 0; border-radius: 12px; background: transparent; color: var(--ink-2); font-weight: 500;
+}
+.back:hover { background: var(--hover); }
+.saved { font-size: 12px; color: var(--ink-3); }
+
+.compose-grid { flex: 1; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; width: 100%; max-width: 1400px; margin: 0 auto; }
+.compose-main { flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.compose-side { flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 14px; position: sticky; top: 92px; }
+.pad { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.pad-lg { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .04em; color: var(--ink-3); }
+.style-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.style-card {
+  display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-radius: 18px;
+  border: 1px solid var(--field-line); background: #FFFFFF; text-align: left; min-height: 44px;
+}
+.style-card[aria-pressed="true"] { border: 2px solid var(--accent); padding: 13px 15px; background: #F7F5FF; }
+.style-card .t { font-weight: 600; font-size: 15px; }
+.style-card .d { font-size: 13px; color: var(--ink-3); }
+.frow { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 6px 20px; border-bottom: 1px solid var(--line); }
+.frow > .lbl { width: 64px; flex: none; color: var(--ink-3); }
+.frow input.bare { flex: 1; min-width: 80px; height: 38px; border: 0; background: transparent; font-size: 14px; outline: none; }
+.frow input.subject-in { font-size: 15px; font-weight: 500; }
+.frow input[list]::-webkit-calendar-picker-indicator { display: none !important; }
+.frow:focus-within { background: rgba(255, 255, 255, .4); }
+.from-pick { position: relative; display: inline-flex; align-items: center; }
+.from-pick .dot { position: absolute; left: 12px; width: 8px; height: 8px; border-radius: 4px; pointer-events: none; }
+.from-pick select { height: 34px; padding: 0 34px 0 28px; border-radius: 17px; border: 1px solid var(--field-line); font-size: 13px; }
+.rcpts { flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.rcpt { display: inline-flex; align-items: center; gap: 2px; height: 28px; padding: 0 2px 0 10px; border-radius: 14px; background: var(--lilac); color: var(--accent-3); font-size: 13px; max-width: 100%; }
+.rcpt.bad { background: var(--bad-soft); color: var(--bad); }
+.rcpt button { width: 24px; height: 24px; border: 0; border-radius: 12px; background: transparent; color: inherit; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.rcpt button:hover { background: rgba(28, 27, 34, .08); }
+.editor { padding: 20px 20px 8px; display: flex; flex-direction: column; gap: 14px; }
+.editor textarea { width: 100%; min-height: 220px; border: 0; padding: 0; background: transparent; font-size: 15px; line-height: 1.7; color: var(--body); resize: vertical; outline: none; field-sizing: content; }
+.sig-note { font-size: 12px; color: var(--ink-3); text-align: center; }
+.sig { display: flex; flex-direction: column; gap: 2px; color: var(--ink-2); font-size: 15px; line-height: 1.55; }
+.sig .nm { font-weight: 700; font-size: 16px; color: var(--ink); margin-top: 4px; }
+.sig.personal .nm { font-weight: 600; font-size: 15px; }
+.sig .sm { font-size: 13px; color: var(--ink-3); }
+.sig .ph { color: #75717F; font-weight: 500; }
+.attach-list { padding: 0 20px 12px; display: flex; flex-direction: column; gap: 8px; }
+.attach-list .file { justify-content: flex-start; background: rgba(255, 255, 255, .8); border: 1px solid var(--line); }
+.attach-list .file .info { flex: 1; }
+.compose-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-top: 1px solid var(--line); }
+.foot-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); min-height: 44px; }
+.ai-head { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+.ai-head svg { color: var(--accent); }
+.ai-note { font-size: 12px; color: var(--ink-3); }
+.seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.seg button { height: 36px; border-radius: 12px; border: 1px solid var(--field-line); background: #FFFFFF; color: var(--ink-2); font-size: 13px; }
+.seg button[aria-pressed="true"] { border-color: transparent; background: var(--lilac); color: var(--accent-3); font-weight: 600; }
+.checks { display: flex; flex-direction: column; gap: 8px; }
+.checks li { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--ink-2); }
+.checks .mk { flex: none; width: 18px; height: 18px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; margin-top: 1px; }
+.checks .ok .mk { background: var(--ok-soft); color: var(--ok); }
+.checks .warn .mk { background: var(--warn-soft); color: var(--warn); }
+.checks .note .mk { background: rgba(28, 27, 34, .06); color: var(--ink-2); }
+.checks .link-btn { padding: 0; font-size: 13px; }
+.checks .link-btn:hover { background: transparent; text-decoration: underline; }
+
+.settings { width: 100%; max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px; padding: 12px 8px 48px; }
+.sec { display: flex; flex-direction: column; gap: 14px; scroll-margin-top: 96px; }
+.sec-head { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.sec-head > div { flex: 1; min-width: 240px; }
+.sec-head h2 { font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+.sec-head p { margin-top: 4px; color: var(--ink-raw); }
+.sub-label { font-size: 12px; font-weight: 600; color: var(--ink-raw); padding: 0 6px; }
+.acct-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.acct-card { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.acct-card .top { display: flex; align-items: center; gap: 10px; }
+.acct-card .top .dot { width: 10px; height: 10px; border-radius: 5px; }
+.acct-card .top .nm { font-weight: 600; flex: 1; }
+.acct-card .em { color: var(--ink-2); overflow-wrap: anywhere; }
+.acct-card .ft { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-3); }
+.acct-card select.input { width: auto; height: 34px; font-size: 13px; }
+.bg-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.bg-tile { display: flex; flex-direction: column; gap: 8px; padding: 8px; border-radius: 20px; border: 1px solid rgba(28, 27, 34, .08); background: rgba(255, 255, 255, .75); text-align: left; }
+.bg-tile[aria-pressed="true"] { border: 2px solid var(--accent); padding: 7px; }
+.bg-tile .lb { font-weight: 600; padding: 0 6px 4px; }
+.bg-tile .lb span { font-weight: 400; color: var(--ink-3); }
+.sig-cards { display: flex; flex-wrap: wrap; gap: 14px; }
+.sig-cards > .card { flex: 1 1 480px; min-width: 0; }
+.sig-cards > .card + .card { flex: 1 1 320px; }
+.card-title { font-weight: 600; font-size: 16px; }
+.card-title span { font-weight: 400; font-size: 12px; color: var(--ink-3); }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.list-card { padding: 4px 20px; }
+.item { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.item:last-child { border-bottom: 0; }
+.item .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.item .txt .t { font-weight: 500; }
+.item .txt .d { font-size: 13px; color: var(--ink-3); }
+.item .note { font-size: 12px; color: var(--ink-3); display: inline-flex; align-items: center; gap: 4px; }
+.rule-num { width: 26px; height: 26px; border-radius: 13px; background: rgba(28, 27, 34, .06); color: var(--ink-2); font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: none; }
+.rule-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; border: 0; background: transparent; padding: 4px 8px; margin: -4px -8px; border-radius: 10px; text-align: left; }
+.rule-text:hover { background: var(--hover); }
+.rule-text .t { font-weight: 500; }
+.rule-text .d { font-size: 13px; color: var(--ink-3); }
+.rule-item.off .rule-text, .rule-item.off .tag { opacity: .6; }
+.order { display: flex; gap: 2px; }
+.radio-row { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 12px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.radio-row:last-child { border-bottom: 0; }
+.radio-row .txt { flex: 1; display: flex; flex-direction: column; }
+.radio-row .d { font-size: 13px; color: var(--ink-3); }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+legend { padding: 0; }
+.quiet { padding: 14px 20px; display: flex; flex-direction: column; gap: 12px; }
+.quiet .row1 { display: flex; align-items: center; gap: 12px; }
+.quiet .row1 .t { flex: 1; font-weight: 500; }
+.times { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.times .field { width: 140px; }
+.vips { display: flex; flex-wrap: wrap; gap: 6px; }
+.info-card { display: flex; gap: 10px; padding: 14px 16px; border-radius: 20px; background: rgba(255, 255, 255, .6); font-size: 13px; color: var(--ink-2); }
+.info-card svg { flex: none; margin-top: 2px; color: var(--accent-2); }
+.notif-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; align-items: start; }
+.notif-grid > div { display: flex; flex-direction: column; gap: 8px; }
+.set-index { display: flex; flex-direction: column; padding: 4px 0; }
+.set-index button { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 10px 16px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; }
+.set-index button:last-child { border-bottom: 0; }
+.set-index .ico { width: 32px; height: 32px; border-radius: 10px; background: var(--lilac); color: var(--accent-3); display: flex; align-items: center; justify-content: center; flex: none; }
+.set-index .txt { flex: 1; display: flex; flex-direction: column; }
+.set-index .d { font-size: 13px; color: var(--ink-3); }
+.set-index .chev { color: var(--ink-3); }
+
+/* ---------- dialog, toast, notification banner ---------- */
+dialog {
+  width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--edge); border-radius: 24px;
+  background: rgba(255, 255, 255, .94); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  box-shadow: var(--shadow-3); color: var(--ink);
+}
+dialog::backdrop { background: rgba(28, 27, 34, .2); }
+.dlg { display: flex; flex-direction: column; gap: 16px; padding: 22px; }
+.dlg h2 { font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+.dlg p { color: var(--ink-2); }
+.dlg .acts { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 4px; }
+.dlg .acts .left { margin-right: auto; }
+.swatches { display: flex; gap: 8px; }
+.swatches button { width: 32px; height: 32px; border-radius: 16px; border: 0; padding: 0; position: relative; }
+.swatches button[aria-pressed="true"] { box-shadow: 0 0 0 2px #FFFFFF, 0 0 0 4px var(--ink); }
+
+#toast { position: fixed; left: 50%; bottom: 24px; z-index: 60; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 32px); }
+.toast { display: flex; align-items: center; gap: 12px; padding: 10px 10px 10px 16px; border-radius: 16px; background: var(--ink); color: #FFFFFF; box-shadow: var(--shadow-3); animation: rise .25s ease-out; }
+.toast span { padding: 4px 0; }
+.toast button { height: 32px; padding: 0 12px; border: 0; border-radius: 10px; background: rgba(255, 255, 255, .12); color: #FFFFFF; font-weight: 600; }
+.toast button:hover { background: rgba(255, 255, 255, .2); }
+#notice { position: fixed; top: 16px; right: 16px; z-index: 55; width: min(380px, calc(100vw - 32px)); }
+.notice {
+  display: flex; align-items: center; gap: 4px; padding: 6px; border-radius: 22px;
+  background: var(--glass-3); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  border: 1px solid var(--edge); box-shadow: var(--shadow-3); animation: drop .35s ease-out;
+}
+.notice .open { flex: 1; min-width: 0; display: flex; gap: 12px; align-items: center; padding: 6px 6px 6px 8px; border: 0; border-radius: 16px; background: transparent; text-align: left; }
+.notice .open:hover { background: var(--hover); }
+.notice .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.notice .k { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
+.notice .f { font-weight: 600; }
+.notice .s { font-size: 13px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+@keyframes drop { from { opacity: 0; transform: translateY(-10px); } }
+
+/* ---------- splash: the Kairn Labs mark on white, first launch only ---------- */
+#splash { display: none; position: fixed; inset: 0; z-index: 100; align-items: center; justify-content: center; background: #FFFFFF; transition: opacity .5s ease; }
+html.splash #splash { display: flex; }
+#splash .mark { width: clamp(72px, 18vmin, 120px); height: clamp(72px, 18vmin, 120px); opacity: 0; transform: scale(.88); }
+#splash.in .mark { animation: mark-in .8s cubic-bezier(.2, .7, .2, 1) forwards; }
+#splash.out { opacity: 0; }
+@keyframes mark-in { to { opacity: 1; transform: scale(1); } }
+@keyframes fade-in { to { opacity: 1; } }
+
+/* ---------- phone tab bar ---------- */
+.tabbar {
+  display: none; position: fixed; left: 14px; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 30;
+  grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 6px; border-radius: 26px;
+  background: rgba(255, 255, 255, .8); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  box-shadow: 0 10px 30px rgba(28, 27, 34, .1);
+}
+.tab { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; border: 0; border-radius: 20px; background: transparent; color: var(--ink-3); font-size: 11px; }
+.tab[aria-current="page"] { color: var(--accent-3); font-weight: 600; }
+.tab .badge { position: absolute; top: 6px; left: calc(50% + 6px); min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent-2); color: #FFFFFF; font-size: 10px; font-weight: 600; line-height: 16px; text-align: center; }
+
+/* ---------- tablet: the sidebar becomes a drawer ---------- */
+@media (max-width: 1099px) {
+  .sidebar {
+    position: fixed; top: 16px; bottom: 16px; left: 16px; z-index: 40;
+    background: rgba(255, 255, 255, .9); box-shadow: var(--shadow-3);
+    transform: translateX(calc(-100% - 24px)); visibility: hidden; transition: transform .25s ease, visibility 0s linear .25s;
+  }
+  .drawer-open .sidebar { transform: none; visibility: visible; transition: transform .25s ease; }
+  .scrim { position: fixed; inset: 0; z-index: 39; background: rgba(28, 27, 34, .2); }
+  .list { width: 340px; }
+  .blocked-banner { display: flex; }
+  .compose-side { position: static; }
+}
+
+/* ---------- phone ---------- */
+@media (max-width: 759px) {
+  body { font-size: 15px; }
+  input, select, textarea, .input { font-size: 16px; }
+  .shell { display: block; height: auto; min-height: 100dvh; padding: 0; }
+  .sidebar { top: 0; bottom: 0; left: 0; width: min(300px, 86vw); border-radius: 0 24px 24px 0; padding-top: max(18px, env(safe-area-inset-top)); }
+  .list { width: auto; border-radius: 0; overflow: visible; background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); --ink-3: var(--ink-raw); }
+  .list-head { padding: max(20px, env(safe-area-inset-top)) 16px 8px; }
+  .list-title h1 { font-size: 26px; letter-spacing: -.02em; }
+  .icon-btn { width: 44px; height: 44px; border-radius: 22px; background: rgba(255, 255, 255, .7); }
+  .list-head .chips { flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px; padding: 6px 16px; scrollbar-width: none; }
+  .list-head .chips::-webkit-scrollbar { display: none; }
+  .chip { height: 34px; }
+  .banner { display: none; }
+  .blocked-banner { margin-top: 2px; }
+  .rows { overflow: visible; padding: 4px 8px; }
+  .row { border-radius: 18px; }
+  .row:hover { background: transparent; }
+  .row:active { background: rgba(255, 255, 255, .85); }
+  .shell.pane-list .reader, .shell.pane-read .list { display: none; }
+  .reader { min-height: 100dvh; border-radius: 0; border: 0; padding: max(14px, env(safe-area-inset-top)) 18px calc(20px + env(safe-area-inset-bottom, 0px)); gap: 16px; background: rgba(255, 255, 255, .7); }
+  .reader .subject { font-size: 22px; }
+  .toolbar { flex-wrap: nowrap; gap: 2px; }
+  .toolbar .back { padding-right: 8px; }
+  .toolbar .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .toolbar .btn-ghost.pill { width: 40px; height: 40px; padding: 0; border-radius: 20px; }
+  .toolbar .btn-ghost.pill svg { display: block; }
+  .reply-bar { position: sticky; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); box-shadow: var(--shadow-3); background: rgba(255, 255, 255, .95); }
+  .tabbar { display: grid; }
+  body[data-tabbar="off"] .tabbar { display: none; }
+  .page { padding: 0 0 calc(110px + env(safe-area-inset-bottom, 0px)); gap: 12px; }
+  .page.compose-page { padding-bottom: 24px; }
+  .topbar { top: 0; border-radius: 0 0 20px 20px; padding: max(10px, env(safe-area-inset-top)) 10px 10px; }
+  .compose-grid { padding: 0 12px; }
+  .compose-side { top: 0; }
+  .frow { padding: 6px 14px; }
+  .frow > .lbl { width: 56px; }
+  .editor { padding: 16px 14px 8px; }
+  .attach-list { padding: 0 14px 12px; }
+  .compose-foot { padding: 12px; }
+  .compose-foot .foot-check { width: 100%; order: 5; }
+  .settings { padding: 0 14px 24px; gap: 18px; }
+  .phone-head { padding: max(20px, env(safe-area-inset-top)) 18px 4px; display: flex; flex-direction: column; gap: 2px; }
+  .phone-head h1 { font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
+  .phone-head .back { align-self: flex-start; min-height: 44px; margin-left: -8px; color: var(--accent-2); }
+  .bg-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid2 { grid-template-columns: minmax(0, 1fr); }
+  .sig-cards > .card { flex-basis: 100%; }
+  .list-card { padding: 4px 16px; }
+  .item { flex-wrap: wrap; }
+  .rule-item .rule-text { flex-basis: calc(100% - 40px); }
+  .rule-item .tag { margin-left: 40px; }
+  .rule-item .order { margin-left: auto; }
+  .quiet { padding: 14px 16px; }
+  .notif-grid { grid-template-columns: minmax(0, 1fr); }
+  #toast { bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+  body[data-tabbar="off"] #toast { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+  #notice { top: max(10px, env(safe-area-inset-top)); left: 10px; right: 10px; width: auto; }
+}
+@media (max-width: 759px) and (min-width: 0) { .hide-phone { display: none !important; } }
+@media (min-width: 760px) { .only-phone { display: none !important; } }
+@media (min-width: 1100px) { .only-narrow { display: none !important; } }
+
+/* ---------- less motion: backgrounds hold still, everything else stops sliding ---------- */
+@media (prefers-reduced-motion: reduce) {
+  #bg .layer, .sw-aurora, .sw-mist { animation: none !important; }
+  .toast, .notice { animation: none; }
+  .sidebar, .switch, .switch::after, .radio { transition: none !important; }
+  #splash .mark { transform: none; }
+  #splash.in .mark { animation: fade-in .4s ease forwards; }
+}
+</style>
+</head>
+<body>
+<div id="bg" class="bg-aurora" aria-hidden="true"><div class="layer"></div></div>
+<div id="app"></div>
+<dialog id="dialog" aria-labelledby="dlg-title"></dialog>
+<div id="notice" role="status" aria-live="polite"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="splash">
+  <svg class="mark" viewBox="0 0 120 120" role="img" aria-label="Kairn Labs">
+    <defs>
+      <!-- Paint the mark in #17140F whatever colors the file uses: keep its shape (alpha), flood it with ink. -->
+      <filter id="kairn-ink" color-interpolation-filters="sRGB">
+        <feFlood flood-color="#17140F"></feFlood>
+        <feComposite in2="SourceAlpha" operator="in"></feComposite>
+      </filter>
+    </defs>
+    <image width="120" height="120" preserveAspectRatio="xMidYMid meet" filter="url(#kairn-ink)"></image>
+  </svg>
+</div>
+<script>
+(function () {
+  'use strict';
+
+  // ---------- helpers ----------
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const uid = () => 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const MIN = 6e4, HOUR = 36e5, DAY = 864e5, MB = 1048576;
+  const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+  const reduceMotion = () => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } };
+  const fmtSize = (b) => (b >= MB ? (b / MB).toFixed(b >= 100 * MB ? 0 : 1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
+  const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  const dayOffset = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d; };
+  const clock = (d) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  function fmtTime(t) {
+    const d = new Date(t), now = new Date();
+    if (sameDay(d, now)) return clock(d);
+    if (sameDay(d, dayOffset(-1))) return 'Yesterday';
+    if (now - d < 6 * DAY) return d.toLocaleDateString([], { weekday: 'short' });
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+  function fmtWhen(t) {
+    const d = new Date(t);
+    if (sameDay(d, new Date())) return 'Today, ' + clock(d);
+    if (sameDay(d, dayOffset(-1))) return 'Yesterday, ' + clock(d);
+    if (sameDay(d, dayOffset(1))) return 'Tomorrow, ' + clock(d);
+    return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ', ' + clock(d);
+  }
+  const initials = (name) => String(name || '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
+  const firstName = (name) => String(name || '').split(/\s+/)[0] || '';
+  const emailOk = (s) => /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(String(s));
+  const domainOf = (s) => String(s).toLowerCase().split('@')[1] || '';
+  const words = (s) => String(s || '').toLowerCase().split(/[,\n]/).map((w) => w.trim()).filter(Boolean);
+  const joinList = (a, last) => (a.length < 2 ? a[0] || '' : a.slice(0, -1).join(', ') + ' ' + last + ' ' + a[a.length - 1]);
+  // When a time lands: an hour of the day, today or a few days on.
+  function at(daysOn, hour, min = 0) { const d = dayOffset(daysOn); d.setHours(hour, min, 0, 0); return d.getTime(); }
+  function nextWeekday(dow, hour) { const d = new Date(); let n = (dow - d.getDay() + 7) % 7; if (n === 0) n = 7; return at(n, hour); }
+
+  const ICON = {
+    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+    back: '<path d="M15 18l-6-6 6-6"/>',
+    menu: '<path d="M4 7h16M4 12h16M4 17h10"/>',
+    sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',
+    inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/>',
+    pen: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+    gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+    reply: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+    clip: '<path d="m21 11-8.6 8.6a5 5 0 0 1-7-7L14 4a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4L15.6 7"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    star: '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
+    flag: '<path d="M5 21V4"/><path d="M5 4h12l-2.5 4.5L17 13H5"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    archive: '<rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4"/>',
+    undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-4"/>',
+    shield: '<path d="M12 3 5 6v6c0 4.4 3 7.6 7 9 4-1.4 7-4.6 7-9V6z"/><path d="m9 12 2 2 4-4"/>',
+    lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+    x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    chevron: '<path d="m9 18 6-6-6-6"/>',
+    up: '<path d="m18 15-6-6-6 6"/>',
+    down: '<path d="m6 9 6 6 6-6"/>',
+    file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+    image: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>',
+    warn: '<path d="M12 4 2.5 20h19z"/><path d="M12 10v4M12 17.5v.01"/>',
+    person: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
+    palette: '<circle cx="12" cy="12" r="9"/><circle cx="8" cy="10" r="1.2"/><circle cx="12" cy="7.5" r="1.2"/><circle cx="16" cy="10" r="1.2"/><path d="M12 21a2.5 2.5 0 0 1 0-5h2a3 3 0 0 0 3-3"/>',
+    filter: '<path d="M4 5h16l-6 7.5V19l-4 2v-8.5z"/>',
+    sign: '<path d="M3 17c3-1 4-6 6-6s1 5 3 5 3-3 4-3 1 2 2 2h3"/><path d="M3 21h18"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    dot: '<circle cx="12" cy="12" r="3" fill="currentColor"/>',
+  };
+  const icon = (name, size = 18, attrs = '') => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${attrs}>${ICON[name]}</svg>`;
+
+  // ---------- accounts ----------
+  // Dots for the account, tints for its avatars. Every account also shows its name, so color is never the only cue.
+  const PALETTE = [
+    { dot: '#7A6CF0', tint: '#E4E0FF' },
+    { dot: '#F2A6B8', tint: '#FCE3EC' },
+    { dot: '#8FD9B6', tint: '#DDF5EA' },
+    { dot: '#F2C36B', tint: '#FCF0D6' },
+    { dot: '#7DB7EE', tint: '#E0EEFB' },
+  ];
+  const STYLES = { professional: 'Professional', personal: 'Personal' };
+
+  // ---------- email filters: rules run on every new email, in order ----------
+  const RULE_WHEN = {
+    unsubscribe: { label: 'Has an unsubscribe link', test: (m) => !!m.unsubscribe, describe: () => 'From senders with unsubscribe links' },
+    subject: { label: 'Subject contains', value: 'text', test: (m, r) => words(r.value).some((w) => m.subject.toLowerCase().includes(w)), describe: (r) => 'Subject contains ' + joinList(words(r.value), 'or') },
+    from: { label: 'Sender contains', value: 'text', test: (m, r) => words(r.value).some((w) => (m.from.name + ' ' + m.from.email).toLowerCase().includes(w)), describe: (r) => 'Sender contains ' + joinList(words(r.value), 'or') },
+    size: { label: 'Has an attachment larger than', value: 'mb', test: (m, r) => m.attachments.some((a) => a.size > Number(r.value) * MB), describe: (r) => `Attachments larger than ${r.value} MB` },
+  };
+  const RULE_THEN = {
+    later: { label: 'Move to Later', chip: () => 'Move to Later', short: () => 'Later', apply: (m) => { m.folder = 'later'; } },
+    label: { label: 'Add a label', chip: (r) => 'Label ' + r.label, short: () => 'Label', apply: (m, r) => { if (!m.labels.includes(r.label)) m.labels.push(r.label); } },
+    flag: { label: 'Flag it', chip: () => 'Flag', short: () => 'Flag', apply: (m) => { m.flagged = true; } },
+    archive: { label: 'Archive it', chip: () => 'Archive', short: () => 'Archive', apply: (m) => { m.folder = 'archive'; } },
+    read: { label: 'Mark it read', chip: () => 'Mark read', short: () => 'Read', apply: (m) => { m.unread = false; } },
+  };
+  const ruleDesc = (r) => r.note || (RULE_WHEN[r.when] ? RULE_WHEN[r.when].describe(r) : '');
+  const ruleChip = (r) => (RULE_THEN[r.then] ? RULE_THEN[r.then].chip(r) : '');
+  const ruleShort = (r) => (r.short || r.name) + ' → ' + (RULE_THEN[r.then] ? RULE_THEN[r.then].short(r) : '');
+
+  // ---------- spam and safety: runs before the filters ----------
+  const EXECUTABLE = /\.(exe|scr|bat|cmd|com|pif|js|jse|vbs|vbe|wsf|msi|jar|apk|ps1|hta|lnk|dll)$/i;
+  const RISKY_FILE = /\.(html?|shtml|docm|xlsm|pptm|iso|img|vhd)$/i;
+  const ASKS_FOR_LOGIN = /\b(password|verify your account|confirm your (identity|account|details)|sign in to (keep|avoid|restore)|account (will be|has been) (suspended|locked|closed)|mailbox will be closed)\b/i;
+  function linkRisk(l) {
+    if (l.risk) return l.risk;  // the link scanner's verdict travels with the message
+    let host = '';
+    try { host = new URL(l.url).hostname.toLowerCase(); } catch (e) { return 'The link is malformed'; }
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return 'Goes to a bare IP address instead of a named site';
+    if (host.includes('xn--')) return 'Uses look-alike characters in the address';
+    if (/@/.test(l.url.split('/')[2] || '')) return 'Hides its real destination';
+    return '';
+  }
+  // What the scanner found in one message.
+  function scan(m) {
+    const found = [];
+    for (const a of m.attachments) {
+      if (a.malware || EXECUTABLE.test(a.name)) found.push({ kind: 'malware', what: `${a.name} is a program that could run on your device` });
+      else if (RISKY_FILE.test(a.name)) found.push({ kind: 'attachment', what: `${a.name} is a file type often used to steal sign-ins` });
+    }
+    for (const l of m.links) { const why = linkRisk(l); if (why) found.push({ kind: 'link', what: why, url: l.url }); }
+    if (m.auth === 'fail' && (ASKS_FOR_LOGIN.test(m.subject + ' ' + m.body) || found.some((f) => f.kind === 'link'))) {
+      found.unshift({ kind: 'phishing', what: `The sender couldn’t be verified as ${domainOf(m.from.email) || 'who it claims to be'}, and it asks you to sign in` });
+    }
+    return found;
+  }
+  const BLOCK_LABEL = { phishing: 'Phishing', malware: 'Malware', link: 'Unsafe link', attachment: 'Unsafe attachment', unknown: 'Held for review' };
+  // Phishing and malware are always blocked. Unsafe links and attachments are blocked unless that is switched off.
+  function verdict(m) {
+    const found = scan(m);
+    const worst = found.find((f) => f.kind === 'phishing') || found.find((f) => f.kind === 'malware');
+    if (worst) return { block: worst.kind, found };
+    const risky = found.find((f) => f.kind === 'link' || f.kind === 'attachment');
+    if (risky && P.safety.unsafe) return { block: risky.kind, found };
+    if (P.safety.holdUnknown && !contacts().has(m.from.email.toLowerCase())) return { block: 'unknown', found };
+    return { block: null, found };
+  }
+
+  // People you've heard from (outside newsletters and blocked mail) or written to.
+  function contacts() {
+    const c = new Map();
+    for (const m of M.messages) {
+      if (m.folder === 'sent') { for (const r of m.to || []) if (emailOk(r.email)) c.set(r.email.toLowerCase(), r.name || r.email); }
+      else if (m.folder !== 'blocked' && !m.unsubscribe) c.set(m.from.email.toLowerCase(), m.from.name);
+    }
+    return c;
+  }
+
+  function normalize(r, now) {
+    return {
+      id: uid(), acct: r.acct, from: { name: r.from[0], email: r.from[1].toLowerCase() }, to: null,
+      subject: r.subject, body: r.body, summary: r.summary || '', time: now - (r.ago || 0),
+      unread: !r.read, starred: !!r.starred, flagged: false, labels: [], rules: [],
+      attachments: (r.attachments || []).map(([name, mb, malware]) => ({ name, size: Math.round(mb * MB), malware: !!malware })),
+      links: (r.links || []).map((l) => (typeof l === 'string' ? { url: l } : l)),
+      quick: r.quick || [], needsReply: !!r.needsReply, important: !!r.important, unsubscribe: !!r.unsubscribe,
+      auth: r.auth || 'pass', folder: 'inbox', found: [], block: null,
+    };
+  }
+
+  // New mail: safety first, then the filters in order. Returns the stored message.
+  function deliver(raw, now) {
+    const m = normalize(raw, now);
+    const v = verdict(m);
+    m.found = v.found;
+    if (v.block) {
+      m.folder = 'blocked';
+      m.block = { kind: v.block };
+    } else applyRules(m);
+    M.messages.push(m);
+    return m;
+  }
+
+  // ---------- notifications ----------
+  const toMin = (s) => { const p = String(s || '0:0').split(':').map(Number); return (p[0] || 0) * 60 + (p[1] || 0); };
+  function inQuietHours(d = new Date()) {
+    const q = P.notify.quiet;
+    if (!q.on) return false;
+    const t = d.getHours() * 60 + d.getMinutes(), a = toMin(q.from), b = toMin(q.to);
+    return a <= b ? t >= a && t < b : t >= a || t < b;
+  }
+  const isVip = (email) => P.vips.includes(String(email).toLowerCase());
+  // Later, Archive and Blocked never notify. Then: the account's switch, the mode, quiet hours.
+  function shouldNotify(m) {
+    if (m.folder !== 'inbox') return false;
+    const a = account(m.acct);
+    if (!a || !a.notify) return false;
+    const vip = isVip(m.from.email);
+    if (P.notify.mode === 'vip' && !vip) return false;
+    if (P.notify.mode === 'important' && !(vip || m.important)) return false;
+    if (inQuietHours() && !(P.notify.quiet.vip && vip)) return false;
+    return true;
+  }
+
+  // ---------- sample mail ----------
+  // Sample data so the client has something to show. It runs through the same safety check and filters as new mail.
+  const SAMPLE = [
+    { acct: 'work', from: ['Dana Whitfield', 'dana@whitfield.design'], subject: 'Photos from the site visit', ago: 18 * MIN,
+      body: 'Great seeing you yesterday. The full-resolution photos are attached.\n\nCould we do the walkthrough Tuesday at 10 AM? Let me know if that works for you.\n\nDana',
+      summary: 'Dana sent three site photos and asks to do the walkthrough Tuesday at 10 AM.',
+      attachments: [['site-north.jpg', 4.2], ['site-south.jpg', 3.8], ['site-detail.jpg', 5.1]],
+      quick: ['Yes, Tuesday works', 'Could we do another day?', 'Thanks for the photos'], needsReply: true, important: true },
+    { acct: 'personal', from: ['Mom', 'mom@example.com'], subject: 'Sunday dinner?', ago: 47 * MIN,
+      body: 'Are you still coming Sunday? Bring the good bread.\n\nLove, Mom',
+      summary: 'Asks if you’re still coming to Sunday dinner, and to bring bread.',
+      quick: ['I’ll be there', 'Can’t make it this week', 'What time?'], needsReply: true, important: true },
+    { acct: 'studio', from: ['Marcus Lee', 'marcus@leedesign.co'], subject: 'Invoice #1042 — paid', ago: 89 * MIN,
+      body: 'Payment went through this morning. Thanks for the quick turnaround on the brand refresh.\n\nMarcus',
+      summary: 'Invoice 1042 is paid. No action needed.', quick: ['Thanks, Marcus!', 'Glad it went through'] },
+    { acct: 'work', from: ['Priya Natarajan', 'priya@northwind.com'], subject: 'Quick question about the proposal', ago: DAY + 40 * MIN, read: true, starred: true,
+      body: 'On page 3, did you mean monthly or annual billing? I want to get the numbers right before the review.\n\nThanks,\nPriya',
+      summary: 'Priya wants to know if the price on page 3 is monthly or annual.', quick: ['Monthly', 'Annual', 'Let me check'], needsReply: true, important: true },
+    { acct: 'personal', from: ['Sam Ortiz', 'sam@ortiz.photo'], subject: 'Trip photos', ago: DAY + 3 * HOUR, read: true,
+      body: 'Uploaded 42 photos from the lake trip at full quality. Your favourite is number 17.\n\nSam',
+      summary: 'Sam shared 42 full-quality photos from the lake trip.', attachments: [['lake-trip-photos.zip', 38.4]], quick: ['These are great!', 'Thanks, Sam'] },
+    { acct: 'studio', from: ['Jordan Blake', 'jordan@blake.studio'], subject: 'Logo files — final round', ago: 3 * DAY, read: true, starred: true,
+      body: 'Final logo exports are ready at full size for print, in SVG and PDF.\n\nJordan',
+      summary: 'Final logo files are ready for print, in SVG and PDF.', attachments: [['logo-final.svg', 0.24], ['logo-final.pdf', 1.8]], quick: ['Looks great, thanks', 'Could you send a PNG too?'] },
+    { acct: 'work', from: ['Alex Chen', 'alex@yourcompany.com'], subject: 'Team lunch Thursday', ago: 3 * DAY + 2 * HOUR, read: true,
+      body: 'Booking a table for eight on Thursday. Reply if you’re in.\n\nAlex',
+      summary: 'Team lunch on Thursday, table for eight. Say if you’re coming.', quick: ['I’m in', 'Can’t make it'], needsReply: true },
+    { acct: 'studio', from: ['Rivera Accounting', 'hello@riveraaccounting.com'], subject: 'Quarterly estimate reminder', ago: 2 * DAY, read: true, snooze: true,
+      body: 'Your next estimated tax amount is due on the 15th. Send us the Q3 numbers and we’ll file it for you.\n\nRivera Accounting',
+      summary: 'Send Q3 numbers before the 15th so they can file your estimate.', quick: ['Sending them this week'] },
+    { acct: 'personal', from: ['Ines Park', 'ines.park@example.com'], subject: 'Book club: next month’s pick', ago: 4 * DAY, read: true, snooze: true,
+      body: 'We’re voting on next month’s book. Reply with your top two before Friday!\n\nInes', summary: 'Vote for next month’s book club pick before Friday.' },
+    // newsletters: the first filter moves these to Later
+    { acct: 'studio', from: ['Design Digest', 'digest@designdigest.news'], subject: 'This week: 12 type pairings worth stealing', ago: 2 * HOUR, unsubscribe: true,
+      body: 'Twelve type pairings from this month’s best sites, and the one rule that makes them work.\n\nUnsubscribe: https://designdigest.news/unsubscribe', summary: 'A newsletter with twelve type pairings.' },
+    { acct: 'personal', from: ['Ridgeline Outdoor', 'deals@ridgeline-outdoor.com'], subject: 'Weekend sale: 30% off rain shells', ago: 3 * HOUR, unsubscribe: true,
+      body: 'Rain shells, fleeces and packs are 30% off through Sunday.\n\nUnsubscribe: https://ridgeline-outdoor.com/unsubscribe', summary: 'A weekend sale, 30% off rain gear.' },
+    { acct: 'work', from: ['The Morning Ledger', 'briefing@morningledger.co'], subject: 'Tuesday briefing: rates, retail and a quiet open', ago: 4 * HOUR, unsubscribe: true,
+      body: 'Rates held steady, retail numbers came in soft, and markets opened quietly.\n\nUnsubscribe: https://morningledger.co/unsubscribe', summary: 'A daily business news briefing.' },
+    { acct: 'personal', from: ['Kiln & Co.', 'hello@kilnandco.shop'], subject: 'New glazes are in', ago: 5 * HOUR, unsubscribe: true,
+      body: 'Eight new glazes just landed, including a soft celadon.\n\nUnsubscribe: https://kilnandco.shop/unsubscribe', summary: 'A shop announcing new pottery glazes.' },
+    { acct: 'work', from: ['Product Weekly', 'newsletter@productweekly.io'], subject: 'Issue 214: Shipping smaller', ago: 6 * HOUR, unsubscribe: true,
+      body: 'This week: why small releases beat big launches, with three teams who switched.\n\nUnsubscribe: https://productweekly.io/unsubscribe', summary: 'A newsletter about shipping smaller releases.' },
+    // unsafe mail: safety blocks these before any filter runs
+    { acct: 'work', from: ['Mail Admin', 'admin@mai1box-support.net'], subject: 'Your mailbox is almost full', ago: 40 * MIN, auth: 'fail',
+      body: 'Your mailbox has reached 98% of its limit. Sign in to keep receiving email: http://mai1box-support.net/login',
+      links: [{ url: 'http://mai1box-support.net/login', risk: 'Goes to a look-alike sign-in page' }] },
+    { acct: 'work', from: ['Accounts Payable', 'ap@billing-notice.top'], subject: 'Overdue invoice attached', ago: 2 * HOUR,
+      body: 'Please see the attached overdue invoice and pay today to avoid a late fee.', attachments: [['Invoice_8812.pdf.exe', 0.6]] },
+    { acct: 'personal', from: ['Gift Rewards', 'rewards@claim-now.click'], subject: 'You have a gift card waiting', ago: 3 * HOUR,
+      body: 'Claim your $500 gift card before midnight: http://185.23.44.10/claim', links: ['http://185.23.44.10/claim'] },
+    { acct: 'studio', from: ['Office Scanner', 'scan@docs-share.net'], subject: 'Scanned document for you', ago: 5 * HOUR,
+      body: 'A document was scanned and sent to you. Open the attachment to view it.', attachments: [['Scan_0291.html', 0.04]] },
+    { acct: 'work', from: ['IT Help Desk', 'helpdesk@yourc0mpany-it.com'], subject: 'Your password expires today', ago: DAY + 2 * HOUR, auth: 'fail',
+      body: 'Your password expires today. Confirm your password here to keep access: https://yourc0mpany-it.com/reset',
+      links: [{ url: 'https://yourc0mpany-it.com/reset', risk: 'Imitates yourcompany.com' }] },
+  ];
+  // Mail that arrives while Quill is open, to show filters, safety and notifications at work.
+  const ARRIVALS = [
+    { acct: 'work', from: ['Priya Natarajan', 'priya@northwind.com'], subject: 'Re: Quick question about the proposal',
+      body: 'Never mind the page 3 question, I found the annual figure in the appendix.\n\nCould you send the signed version by Friday?\n\nThanks,\nPriya',
+      summary: 'Priya found the annual figure and asks for the signed proposal by Friday.', quick: ['I’ll send it by Friday', 'Sending it now'], needsReply: true, important: true },
+    { acct: 'studio', from: ['Field Notes', 'letters@fieldnotes.blog'], subject: 'Field Notes #88: Paper sketchbooks', unsubscribe: true,
+      body: 'Why we keep going back to paper, and five sketchbooks that lie flat.\n\nUnsubscribe: https://fieldnotes.blog/unsubscribe', summary: 'A newsletter about paper sketchbooks.' },
+    { acct: 'work', from: ['Mail Admin', 'admin@mai1box-support.net'], subject: 'Action required: confirm your account', auth: 'fail',
+      body: 'Your mailbox will be closed today. Confirm your account to keep it: http://mai1box-support.net/confirm',
+      links: [{ url: 'http://mai1box-support.net/confirm', risk: 'Goes to a look-alike sign-in page' }] },
+    { acct: 'studio', from: ['Jordan Blake', 'jordan@blake.studio'], subject: 'Invoice #1043 for the logo work',
+      body: 'Invoice 1043 for the final logo round is attached. It’s due in 30 days.\n\nThanks!\nJordan',
+      summary: 'Jordan sent invoice 1043 for the logo work, due in 30 days.', attachments: [['invoice-1043.pdf', 0.2]], quick: ['Thanks, paying this week'] },
+  ];
+  const ARRIVE_AFTER = [40, 100, 170, 260]; // seconds after launch
+
+  // ---------- storage ----------
+  const LS = 'quill.v1';
+  const defaultPrefs = () => ({
+    bg: 'aurora',
+    accounts: [
+      { id: 'work', name: 'Work', email: 'you@yourcompany.com', color: 0, sig: 'professional', notify: true },
+      { id: 'personal', name: 'Personal', email: 'you@gmail.com', color: 1, sig: 'personal', notify: true },
+      { id: 'studio', name: 'Studio', email: 'hello@yourstudio.com', color: 2, sig: 'professional', notify: false },
+    ],
+    signatures: {
+      professional: { name: '', title: '', company: '', phone: '', site: '', addr: '' },
+      personal: { name: '', phone: '', signoff: '' },
+    },
+    rules: [
+      { id: 'newsletters', name: 'Newsletters and promotions', short: 'Newsletters', when: 'unsubscribe', value: '', then: 'later', on: true },
+      { id: 'invoices', name: 'Invoices and receipts', short: 'Invoices', when: 'subject', value: 'invoice, receipt, payment', then: 'label', label: 'Invoices', on: true },
+      { id: 'large', name: 'Large attachments over 25 MB', short: 'Over 25 MB', when: 'size', value: '25', then: 'flag', on: true, note: 'Flag so you can check before downloading' },
+    ],
+    safety: { unsafe: true, holdUnknown: false },
+    notify: { mode: 'important', quiet: { on: true, from: '22:00', to: '07:00', vip: true } },
+    vips: ['mom@example.com', 'dana@whitfield.design'],
+  });
+  let P = defaultPrefs();
+  let M = { messages: [], queue: 0, draft: null };
+
+  function seed() {
+    const now = Date.now();
+    for (const raw of SAMPLE.slice().sort((a, b) => b.ago - a.ago)) {
+      const m = deliver(raw, now);
+      if (raw.snooze) { m.folder = 'snoozed'; m.snoozeUntil = at(1, 8); }
+    }
+  }
+  function load() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(LS)); } catch (e) { saved = null; }
+    if (saved && saved.v === 1 && saved.prefs && saved.mail && Array.isArray(saved.mail.messages)) {
+      // Fill in anything a newer version added, one level down, without losing what was saved.
+      const d = defaultPrefs(), s = saved.prefs, sig = s.signatures || {}, n = s.notify || {};
+      P = Object.assign(defaultPrefs(), s, {
+        signatures: { professional: Object.assign(d.signatures.professional, sig.professional), personal: Object.assign(d.signatures.personal, sig.personal) },
+        notify: Object.assign(d.notify, n, { quiet: Object.assign(d.notify.quiet, n.quiet) }),
+        safety: Object.assign(d.safety, s.safety),
+      });
+      M = Object.assign({ messages: [], queue: 0, draft: null }, saved.mail);
+      return;
+    }
+    seed();
+    save();
+  }
+  let saveT = 0;
+  function save() {
+    clearTimeout(saveT);
+    saveT = setTimeout(() => {
+      try { localStorage.setItem(LS, JSON.stringify({ v: 1, prefs: P, mail: M })); } catch (e) { /* storage blocked: this visit only */ }
+    }, 150);
+  }
+
+  // ---------- AI writing help ----------
+  // On claude.ai Quill writes with Claude. Anywhere else a small writer on this device handles drafts and quick fixes.
+  const AI = {
+    sample: null,
+    async init() {
+      const has = () => !!(window.claude && typeof window.claude.use === 'function');
+      if (!has() && window.self !== window.top) for (let i = 0; i < 25 && !has(); i++) await sleep(100);
+      if (!has()) return;
+      try { AI.sample = await window.claude.use('sample'); } catch (e) { AI.sample = null; }
+    },
+    async ask(prompt) {
+      try {
+        const r = await AI.sample([{ role: 'user', content: prompt }], { cache: false });
+        return String((r && r.text) || '').trim();
+      } catch (e) {
+        if (e && ['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].includes(e.code)) AI.sample = null;
+        throw e;
+      }
+    },
+  };
+  const LENGTH = { short: 'Short: one or two sentences.', medium: 'Medium: a short paragraph or two.', detailed: 'Detailed: a few paragraphs that cover the specifics.' };
+  const TONE = {
+    professional: 'Professional: a formal greeting such as "Hi Dana," and a clear, courteous voice.',
+    personal: 'Personal: relaxed and warm, with contractions and a casual greeting such as "Hey Dana!".',
+  };
+  const FIXES = {
+    shorter: { label: 'Make it shorter', ask: 'Make it shorter. Cut filler and keep every fact, date and request.' },
+    friendly: { label: 'More friendly', ask: 'Make it warmer and more friendly, still right for the recipient.' },
+    formal: { label: 'More formal', ask: 'Make it more formal and polished.' },
+    grammar: { label: 'Fix grammar', ask: 'Fix spelling, grammar and punctuation only. Keep the wording otherwise.' },
+  };
+  const LANGUAGES = ['Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Dutch', 'Japanese', 'Korean', 'Chinese (Simplified)'];
+  function draftPrompt(d, orig, name) {
+    return [
+      'You write email drafts inside Quill, the user’s email app.',
+      'Write only the body: start with a greeting and stop before the sign-off. Quill adds the signature, so leave out "Best regards", "Thanks," and the user’s name.',
+      'Tone: ' + TONE[d.style],
+      'Length: ' + LENGTH[d.length],
+      name ? 'The recipient is ' + name + '.' : '',
+      orig ? `This replies to an email from ${orig.from.name} with the subject "${orig.subject}":\n"""\n${orig.body}\n"""` : '',
+      'What the user wants to say:\n"""\n' + d.ask.trim() + '\n"""',
+      'Reply with the email body only, as plain text.',
+    ].filter(Boolean).join('\n\n');
+  }
+  const fixPrompt = (ask, body) => `Rewrite this email body. ${ask} Keep names, dates and numbers. Don’t add a sign-off or signature. Reply with the rewritten body only, as plain text.\n\n"""\n${body}\n"""`;
+
+  // The on-device writer: plain rules, no network. Good at short replies; Claude does the rest.
+  const Basic = (function () {
+    const DAYS = 'monday|tuesday|wednesday|thursday|friday|saturday|sunday';
+    // "I have" stays out: "I’ve a question" reads wrong. It is only expanded, never contracted.
+    const pairs = [
+      ['I will', 'I’ll'], ['I am', 'I’m'], ['we will', 'we’ll'], ['you are', 'you’re'], ['it is', 'it’s'], ['that is', 'that’s'],
+      ['do not', 'don’t'], ['does not', 'doesn’t'], ['did not', 'didn’t'], ['cannot', 'can’t'], ['will not', 'won’t'], ['is not', 'isn’t'],
+      ['are not', 'aren’t'], ['would not', 'wouldn’t'], ['could not', 'couldn’t'], ['should not', 'shouldn’t'], ['there is', 'there’s'],
+    ];
+    const keepCase = (src, out) => (src[0] === src[0].toUpperCase() ? out[0].toUpperCase() + out.slice(1) : out);
+    const rx = (s) => new RegExp('\\b' + s.replace(/’/g, '[’\']').replace(/ /g, '\\s+') + '(?![\\w’\'])', 'gi');
+    const contract = (t) => pairs.reduce((s, [a, b]) => s.replace(rx(a), (m) => keepCase(m, b)), t);
+    const expand = (t) => pairs.concat([['I have', 'I’ve'], ['we are', 'we’re'], ['they are', 'they’re']]).reduce((s, [a, b]) => s.replace(rx(b), (m) => keepCase(m, a)), t);
+    const sentenceCase = (s) => s.replace(/(^\s*|[.!?]\s+)([a-z])/g, (m, a, b) => a + b.toUpperCase());
+    const tidyTimes = (s) => s
+      .replace(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/gi, (m, h, mm, ap) => `${h}${mm ? ':' + mm : ''} ${ap.toUpperCase()}`)
+      .replace(new RegExp(`\\b(${DAYS}|tomorrow|today)\\s+(?:at\\s+)?(\\d{1,2}(?::\\d{2})?\\s(?:AM|PM))`, 'gi'), '$1 at $2')
+      .replace(new RegExp(`\\b(${DAYS})\\b`, 'gi'), (d) => cap(d.toLowerCase()));
+    const STARTER = "(?:that|say|tell|ask|mention|thank|thanks|let|remind|confirm|i|i'll|i’ll|i'm|i’m|we|we'll|we’ll|yes|no|please|also)\\b";
+    const SPLIT = new RegExp(`\\s*(?:;|,?\\s+and\\s+(?=${STARTER})|,\\s*(?=${STARTER}))\\s*`, 'i');
+    function clause(raw, pro) {
+      let c = raw.trim().replace(/^(?:also|and)\s+/i, '');
+      c = c.replace(/^(?:please\s+)?(?:say|tell (?:them|him|her|\w+)|let (?:them|him|her|\w+) know|mention|reply|respond|write)(?:\s+(?:that|to say))?\s+/i, '');
+      c = c.replace(/^that\s+/i, '');
+      let m;
+      if ((m = c.match(/^yes\s+to\s+(.+)/i))) c = `${m[1]} works ${pro ? 'well ' : ''}for me`;
+      else if ((m = c.match(/^no\s+to\s+(.+)/i))) c = `${m[1]} ${pro ? 'does not' : 'doesn’t'} work for me`;
+      else if (/^yes$/i.test(c)) c = pro ? 'Yes, that works for me' : 'Yes, sounds good';
+      else if (/^no$/i.test(c)) c = pro ? 'Unfortunately, that does not work for me' : 'Sorry, that doesn’t work for me';
+      else if ((m = c.match(/^(yes|no)[,!]?\s+(.+)/i))) c = `${cap(m[1].toLowerCase())}, ${m[2]}`;
+      else if ((m = c.match(/^ask (?:them |him |her )?(?:if|whether)\s+(.+)/i))) c = `Could you let me know if ${m[1]}?`;
+      else if ((m = c.match(/^ask (?:them |him |her )?to\s+(.+)/i))) c = `Could you ${pro ? 'please ' : ''}${m[1]}?`;
+      else if ((m = c.match(/^ask (?:them |him |her )?for\s+(.+)/i))) c = `Could you ${pro ? 'please ' : ''}send ${m[1]}?`;
+      else if ((m = c.match(/^thanks? (?:them |him |her )?for\s+(.+)/i))) c = `${pro ? 'Thank you' : 'Thanks'} for ${m[1]}`;
+      c = tidyTimes(c);
+      c = pro ? expand(c) : contract(c);
+      c = c.replace(/\bi\b/g, 'I').trim();
+      if (!c) return '';
+      c = c[0].toUpperCase() + c.slice(1);
+      return /[.?!]$/.test(c) ? c : c + '.';
+    }
+    function say(ask, pro) {
+      const parts = ask.trim().replace(/\s+/g, ' ').replace(/[.!]+$/, '').split(SPLIT).filter(Boolean).map((p) => clause(p, pro)).filter(Boolean);
+      if (parts.length === 2 && /^I\b/.test(parts[1]) && /\.$/.test(parts[0])) return parts[0].slice(0, -1) + ', and ' + parts[1];
+      return parts.join(' ');
+    }
+    function write({ ask, length, style, name, orig }) {
+      const pro = style === 'professional';
+      const greet = name ? (pro ? `Hi ${name},` : `Hey ${name}!`) : (pro ? 'Hello,' : 'Hi!');
+      const open = [];
+      if (orig) {
+        const pics = orig.attachments.some((a) => /\.(jpe?g|png|heic|gif|webp|zip)$/i.test(a.name)) || /photo/i.test(orig.subject);
+        const thing = orig.attachments.length ? (pics ? 'photos' : 'files') : '';
+        if (thing) open.push(pro ? `Thank you for sending the ${thing}.` : `Thanks for the ${thing}!`);
+        else if (length !== 'short') open.push(pro ? 'Thank you for your email.' : 'Thanks for your note!');
+      }
+      const out = [greet, open.concat(say(ask, pro)).join(' ')];
+      const timed = new RegExp(`\\b(${DAYS}|tomorrow|today|\\d{1,2}\\s?(am|pm))\\b`, 'i').test(ask);
+      if (length === 'detailed') out.push(pro ? 'If it would help, I am happy to share anything else ahead of time.' : 'Shout if you need anything before then.');
+      if (length !== 'short') out.push(timed ? (pro ? 'Please let me know if anything changes before then.' : 'See you then!') : (pro ? 'Please let me know if you have any questions.' : 'Let me know what you think!'));
+      return out.join('\n\n');
+    }
+    const paras = (t) => t.split(/\n{2,}/);
+    function shorter(t) {
+      let p = paras(t).map((x) => x
+        .replace(/\b(?:just|really|very|actually|basically|quite|simply)\s+/gi, '')
+        .replace(/\bI (?:just )?wanted to (?:let you know|say) (?:that )?/gi, '')
+        .replace(/\bI hope (?:this|you)[^.!?]*[.!?]\s*/gi, ''));
+      p = p.map((x) => { const s = x.match(/[^.!?]+[.!?]+(\s|$)/g); return s && s.length > 2 ? s.slice(0, 2).join('').trim() : x; });
+      if (p.length > 2 && /^(please let me know|let me know|see you|talk soon|if it would help|shout if)/i.test(p[p.length - 1].trim())) p.pop();
+      if (p.length > 3) p = [p[0], p[1], p[p.length - 1]];
+      return p.map((x) => sentenceCase(x.trim())).filter(Boolean).join('\n\n');
+    }
+    function friendly(t) {
+      let s = t.replace(/^(?:Hi|Hello|Dear)\s+([^,\n]+),/m, 'Hey $1!').replace(/^Hello,/m, 'Hi!');
+      s = contract(s).replace(/\bThank you\b/g, 'Thanks').replace(/\bPlease let me know\b/g, 'Let me know').replace(/\bI am happy to\b/g, 'happy to');
+      return s;
+    }
+    function formal(t) {
+      let s = t.replace(/^Hey\s+([^!,\n]+)[!,]/m, 'Hi $1,').replace(/^Hi!$/m, 'Hello,');
+      s = expand(s).replace(/\bThanks\b/g, 'Thank you').replace(/\bthanks\b/g, 'thank you').replace(/(^|[.!?]\s+)Let me know\b/g, '$1Please let me know')
+        .replace(/\bgonna\b/gi, 'going to').replace(/\bwanna\b/gi, 'want to').replace(/\byeah\b/gi, 'yes').replace(/\bcan’t wait\b/gi, 'look forward to it');
+      return s.split('\n').map((line, i) => (i === 0 ? line : line.replace(/!(?=\s|$)/g, '.'))).join('\n');
+    }
+    const TYPOS = { teh: 'the', recieve: 'receive', recieved: 'received', dont: 'don’t', im: 'I’m', wont: 'won’t', cant: 'can’t', didnt: 'didn’t', doesnt: 'doesn’t', thier: 'their', alot: 'a lot', definately: 'definitely', seperate: 'separate', occured: 'occurred', untill: 'until', tommorow: 'tomorrow', tomorow: 'tomorrow', wich: 'which', becuase: 'because', beleive: 'believe', acheive: 'achieve', adress: 'address', calender: 'calendar', goverment: 'government' };
+    function grammar(t) {
+      return paras(t).map((p) => {
+        // Spacing only between words, so links, decimals and email addresses stay intact.
+        let s = p.replace(/[ \t]+/g, ' ').replace(/ +([,.!?;:])/g, '$1').replace(/([a-z]),(?=[A-Za-z])/g, '$1, ').replace(/([a-z]{2})([.!?])(?=[A-Z][a-z])/g, '$1$2 ');
+        s = s.replace(/(^|\s)([A-Za-z]+)(?=[\s,.!?;:]|$)/g, (m, sp, w) => { const f = TYPOS[w.toLowerCase()]; return f ? sp + keepCase(w, f) : m; });
+        s = s.replace(/\bi\b/g, 'I').replace(/\bi’m\b|\bi'm\b/g, 'I’m').replace(new RegExp(`\\b(${DAYS})\\b`, 'g'), (d) => cap(d));
+        s = sentenceCase(s.trim());
+        const lines = s.split('\n');
+        const last = lines.length - 1;
+        if (lines[last] && !/[.!?,:;)"”’]$/.test(lines[last]) && lines[last].split(' ').length > 3) lines[last] += '.';
+        return lines.join('\n');
+      }).join('\n\n');
+    }
+    return { write, shorter, friendly, formal, grammar };
+  })();
+
+  // ---------- view state (not saved) ----------
+  const S = {
+    view: 'mail', folder: 'inbox', chip: 'all', sel: null, q: '', searching: false,
+    pane: 'list', drawer: false, menu: null, sec: null, size: 'wide', dialog: null,
+    reply: {}, busy: null, focus: null, listY: 0,
+  };
+  const msg = (id) => M.messages.find((m) => m.id === id) || null;
+  const account = (id) => P.accounts.find((a) => a.id === id) || null;
+  const pal = (a) => PALETTE[(a && a.color) || 0] || PALETTE[0];
+  const sortKey = (m) => m.back || m.time;
+
+  const FOLDERS = [['inbox', 'Inbox'], ['needs', 'Needs reply'], ['starred', 'Starred'], ['snoozed', 'Snoozed'], ['later', 'Later'], ['sent', 'Sent'], ['archive', 'Archive']];
+  function inFolder(m, f) {
+    if (f === 'needs') return m.folder === 'inbox' && m.needsReply && !m.replied;
+    if (f === 'starred') return m.starred && m.folder !== 'blocked';
+    if (f.startsWith('rule:')) return m.rules.includes(f.slice(5)) && m.folder !== 'blocked';
+    return m.folder === f;
+  }
+  function visible() {
+    const q = S.q.trim().toLowerCase();
+    return M.messages
+      .filter((m) => (q ? (S.folder === 'blocked' ? m.folder === 'blocked' : m.folder !== 'blocked') : inFolder(m, S.folder)))
+      .filter((m) => S.chip === 'all' || (S.chip === 'unread' ? m.unread : m.acct === S.chip))
+      .filter((m) => !q || [m.from.name, m.from.email, m.subject, m.body, (m.to || []).map((r) => r.name + ' ' + r.email).join(' '), m.labels.join(' ')].join(' ').toLowerCase().includes(q))
+      .sort((a, b) => sortKey(b) - sortKey(a));
+  }
+  function counts() {
+    const c = { inbox: 0, needs: 0, starred: 0, snoozed: 0, later: 0, blocked: 0, blockedToday: 0, laterNew: 0 };
+    const today = new Date();
+    for (const m of M.messages) {
+      if (m.folder === 'inbox' && m.unread) c.inbox++;
+      if (inFolder(m, 'needs')) c.needs++;
+      if (inFolder(m, 'starred')) c.starred++;
+      if (m.folder === 'snoozed') c.snoozed++;
+      if (m.folder === 'later' && m.unread) { c.later++; if (m.rules.includes('newsletters')) c.laterNew++; }
+      if (m.folder === 'blocked') { c.blocked++; if (sameDay(new Date(m.time), today)) c.blockedToday++; }
+    }
+    return c;
+  }
+  const ruleCount = (r) => M.messages.filter((m) => m.rules.includes(r.id)).length;
+  function folderTitle() {
+    if (S.q.trim()) return 'Search';
+    if (S.folder.startsWith('rule:')) { const r = P.rules.find((x) => 'rule:' + x.id === S.folder); return r ? r.name : 'Filter'; }
+    if (S.folder === 'blocked') return 'Blocked';
+    if (S.folder !== 'inbox') return FOLDERS.find((f) => f[0] === S.folder)[1];
+    if (S.chip === 'unread') return 'Unread';
+    if (S.chip !== 'all') return (account(S.chip) || {}).name || 'Inbox';
+    return S.size === 'phone' ? 'Inbox' : 'All inboxes';
+  }
+  const EMPTY = {
+    inbox: ['You’re all caught up.', 'New mail from every account lands here.'],
+    needs: ['Nothing is waiting on you.', 'Emails that ask you something show up here.'],
+    starred: ['No starred mail.', 'Star an email to keep it handy.'],
+    snoozed: ['Nothing snoozed.', 'Snooze an email and it comes back when you choose.'],
+    later: ['Later is empty.', 'Your filters move newsletters and promotions here.'],
+    sent: ['Nothing sent yet.', 'Mail you send from Quill shows up here.'],
+    archive: ['Archive is empty.', 'Archived mail stays here, out of the way.'],
+    blocked: ['Nothing blocked.', 'Unsafe mail is held here so you can review it.'],
+  };
+
+  // ---------- small pieces ----------
+  const avatar = (name, acct, lg) => `<span class="avatar${lg ? ' lg' : ''}" style="background:${pal(acct).tint}" aria-hidden="true">${esc(initials(name))}</span>`;
+  const sw = (on, act, arg, label, extra = '') => `<button type="button" class="switch" role="switch" aria-checked="${on}" aria-label="${esc(label)}" data-act="${act}" data-arg="${esc(arg)}" ${extra}></button>`;
+  const menuWrap = (id, trigger, items, cls = '') => `<span class="menu-wrap">${trigger}${S.menu === id ? `<div class="menu ${cls}" role="menu" data-menu="${id}">${items}</div>` : ''}</span>`;
+  const menuItem = (act, arg, label, hint) => `<button type="button" role="menuitem" data-act="${act}" data-arg="${esc(arg)}"><span>${esc(label)}</span>${hint ? `<span class="hint">${esc(hint)}</span>` : ''}</button>`;
+
+  // ---------- mail ----------
+  function mailView() {
+    return `<div class="shell pane-${S.pane}${S.drawer ? ' drawer-open' : ''}">
+      ${S.drawer && S.size !== 'wide' ? '<div class="scrim" data-act="drawer" data-arg="0"></div>' : ''}
+      ${sidebar()}${listPanel()}${readerPanel()}
+    </div>${tabbar()}`;
+  }
+
+  function sidebar() {
+    const c = counts();
+    const nav = FOLDERS.map(([id, name]) => {
+      const n = id === 'inbox' ? c.inbox : id === 'needs' ? c.needs : id === 'starred' ? c.starred : id === 'snoozed' ? c.snoozed : id === 'later' ? c.later : 0;
+      const cur = S.folder === id && !S.q.trim();
+      return `<button type="button" class="nav-item" data-act="folder" data-arg="${id}" ${cur ? 'aria-current="page"' : ''}><span>${name}</span>${n ? `<span class="count">${n}<span class="sr"> ${id === 'inbox' || id === 'later' ? 'unread' : ''}</span></span>` : ''}</button>`;
+    }).join('');
+    const accts = P.accounts.map((a) => `<button type="button" class="nav-item" data-act="chip" data-arg="${a.id}" ${S.chip === a.id ? 'aria-current="page"' : ''}><span class="lead"><span class="acct-dot" style="background:${pal(a).dot}"></span><span>${esc(a.name)}</span></span></button>`).join('');
+    const rules = P.rules.filter((r) => r.on).map((r) => `<button type="button" class="nav-item" data-act="folder" data-arg="rule:${r.id}" ${S.folder === 'rule:' + r.id ? 'aria-current="page"' : ''} style="font-size:13px"><span class="lead"><span>${esc(ruleShort(r))}</span></span><span class="rule-count">${ruleCount(r)}</span></button>`).join('');
+    return `<aside class="sidebar glass" aria-label="Folders, accounts and filters">
+      <div class="brand"><span class="brand-tile" aria-hidden="true"></span><span class="brand-name">Quill</span>
+        <button type="button" class="icon-btn sm" data-act="settings" aria-label="Settings">${icon('gear', 18)}</button></div>
+      <button type="button" class="btn btn-grad lg" data-act="compose" style="width:100%">New message</button>
+      <nav class="nav" aria-label="Folders">${nav}</nav>
+      <div class="side-group"><div class="side-label">Accounts</div>${accts}</div>
+      <div class="side-group"><div class="side-label">Email filters</div>${rules}<button type="button" class="link-btn" data-act="new-rule">+ Add filter</button></div>
+      <div class="safety-card">
+        <div class="k">Spam blocked today</div>
+        <div class="n">${c.blockedToday}</div>
+        <p>Phishing, malware and unsafe links are stopped before they reach you.</p>
+        <button type="button" class="link-btn" data-act="folder" data-arg="blocked">Review blocked mail${c.blocked ? ` (${c.blocked})` : ''}</button>
+      </div>
+    </aside>`;
+  }
+
+  function listPanel() {
+    const list = visible(), c = counts();
+    const chips = [['all', 'All'], ['unread', 'Unread']].concat(P.accounts.map((a) => [a.id, a.name]))
+      .map(([id, label]) => `<button type="button" class="chip" data-act="chip" data-arg="${id}" aria-pressed="${S.chip === id}">${esc(label)}</button>`).join('');
+    const filtered = S.folder === 'inbox' && !S.q.trim() && c.laterNew
+      ? `<div class="banner"><span>Your filter moved ${c.laterNew} ${c.laterNew === 1 ? 'newsletter' : 'newsletters'} to Later.</span><button type="button" class="link-btn" data-act="folder" data-arg="later">View</button></div>` : '';
+    const blocked = S.folder === 'inbox' && !S.q.trim() && c.blockedToday
+      ? `<div class="blocked-banner"><span class="ico">${icon('shield', 16)}</span><span>${c.blockedToday} unsafe ${c.blockedToday === 1 ? 'message' : 'messages'} blocked today</span><button type="button" class="link-btn" data-act="folder" data-arg="blocked">Review</button></div>` : '';
+    const blockedNote = S.folder === 'blocked' && !S.q.trim()
+      ? '<div class="banner"><span>Blocked mail stays here so you can review it. Links and attachments are off, and nothing is deleted.</span></div>' : '';
+    let body;
+    if (list.length) body = `<ul class="rows" data-keep="rows">${list.map(row).join('')}</ul>`;
+    else {
+      const [t, d] = S.q.trim() ? ['No matches.', 'Try a name, a word from the subject, or a label.']
+        : S.chip !== 'all' && S.chip !== 'unread' ? [`Nothing from ${(account(S.chip) || {}).name || 'this account'} here.`, 'Pick All to see every account.']
+        : S.folder.startsWith('rule:') ? ['This filter hasn’t matched anything yet.', 'It runs on new mail as it arrives.']
+        : EMPTY[S.folder] || EMPTY.inbox;
+      body = `<div class="empty"><strong>${t}</strong><span>${d}</span></div>`;
+    }
+    return `<section class="list glass" aria-label="Messages">
+      <div class="list-head">
+        <div class="list-title">
+          <button type="button" class="icon-btn only-narrow" data-act="drawer" data-arg="1" aria-label="Folders, accounts and filters" aria-expanded="${S.drawer}">${icon('menu', 18)}</button>
+          <h1>${esc(folderTitle())}</h1>
+          <button type="button" class="icon-btn" data-act="search" aria-label="${S.searching ? 'Close search' : 'Search'}" aria-expanded="${S.searching}">${icon(S.searching ? 'x' : 'search', 17)}</button>
+        </div>
+        ${S.searching ? `<div class="search" role="search"><label class="sr" for="q">Search all mail</label><input id="q" type="search" placeholder="Search all mail" value="${esc(S.q)}" data-bind="q" autocomplete="off" enterkeyhint="search"></div>` : ''}
+        <div class="chips" role="group" aria-label="Show">${chips}</div>
+        ${filtered}${blocked}${blockedNote}
+      </div>
+      ${body}
+    </section>`;
+  }
+
+  function row(m) {
+    const a = account(m.acct);
+    const cur = S.size !== 'phone' && m.id === S.sel;
+    const sent = m.folder === 'sent';
+    const who = sent ? 'To ' + (m.to || []).map((r) => r.name || r.email).join(', ') : m.from.name;
+    const time = m.folder === 'snoozed' && m.snoozeUntil ? 'Back ' + fmtTime(m.snoozeUntil) : m.scheduled ? 'Sends ' + fmtTime(m.scheduled) : fmtTime(m.time);
+    const tags = (m.block ? `<span class="tag bad">${BLOCK_LABEL[m.block.kind]}</span>` : '') + m.labels.map((l) => `<span class="tag">${esc(l)}</span>`).join('') + (m.scheduled ? '<span class="tag grey">Scheduled</span>' : '');
+    const icons = (m.attachments.length ? `<span class="row-ico" title="Has attachments">${icon('clip', 14)}</span>` : '')
+      + (m.flagged ? `<span class="row-ico flag" title="Flagged">${icon('flag', 14)}</span>` : '')
+      + (m.starred ? `<span class="row-ico star" title="Starred">${icon('star', 14, 'fill="currentColor"')}</span>` : '');
+    const preview = m.body;
+    return `<li><button type="button" class="row${m.unread ? ' unread' : ''}" data-act="open" data-arg="${m.id}" aria-current="${cur}">
+      ${avatar(sent ? ((m.to || [])[0] || {}).name || who : m.from.name, a)}
+      <span class="row-main">
+        <span class="sr">${m.unread ? 'Unread. ' : ''}${a ? esc(a.name) + ' account. ' : ''}${m.flagged ? 'Flagged. ' : ''}</span>
+        <span class="row-top"><span class="row-from">${esc(who)}</span>${icons}<span class="row-time">${esc(time)}</span></span>
+        <span class="row-subj">${esc(m.subject || '(no subject)')}</span>
+        <span class="row-prev">${tags}<span class="txt">${esc(String(preview).replace(/\s+/g, ' ').slice(0, 140))}</span></span>
+      </span>
+      <span class="row-dot" style="background:${pal(a).dot}" aria-hidden="true"></span>
+    </button></li>`;
+  }
+
+  function linkify(m, live) {
+    const risky = new Map();
+    for (const l of m.links || []) { const why = linkRisk(l); if (why) risky.set(l.url, why); }
+    return m.body.split(/\n{2,}/).map((p) => '<p>' + esc(p).replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)'"]/g, (u) => {
+      const raw = u.replace(/&amp;/g, '&');
+      if (!live) return `<span class="dead-link" title="Links are off in blocked mail">${u}</span>`;
+      if (risky.has(raw)) return `<span class="dead-link" title="${esc('Turned off: ' + risky.get(raw))}">${u}</span>`;
+      return `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`;
+    }).replace(/\n/g, '<br>') + '</p>').join('');
+  }
+  function filesHtml(m, live) {
+    if (!m.attachments.length) return '';
+    return `<ul class="files" aria-label="Attachments">${m.attachments.map((f) => {
+      const danger = m.found.some((x) => (x.kind === 'malware' || x.kind === 'attachment') && x.what.startsWith(f.name));
+      const big = f.size > 25 * MB;
+      const status = !live ? 'Download off' : danger ? 'Flagged by the scanner' : big ? 'Large: check before downloading' : 'Checked';
+      return `<li class="file"><span class="ico${danger ? ' bad' : ''}">${icon(/\.(jpe?g|png|gif|webp|heic)$/i.test(f.name) ? 'image' : 'file', 18)}</span>
+        <span class="info"><span class="nm">${esc(f.name)}</span><span class="sz">${fmtSize(f.size)} · ${status}</span></span></li>`;
+    }).join('')}</ul>`;
+  }
+
+  function readerPanel() {
+    const m = S.sel && msg(S.sel);
+    if (!m) {
+      return `<section class="reader glass" aria-label="Reading pane"><div class="empty"><strong>Pick an email to read it.</strong><span>${S.size === 'wide' ? 'Press C to write a new one.' : ''}</span></div></section>`;
+    }
+    const a = account(m.acct);
+    const back = `<button type="button" class="back only-phone" data-act="back-list">${icon('back', 16)} ${esc(folderTitle())}</button>`;
+    if (m.folder === 'blocked') return blockedReader(m, a, back);
+    const sent = m.folder === 'sent';
+    const bgPill = `<button type="button" class="btn btn-white pill hide-phone" data-act="next-bg">Background · ${BG_NAMES[P.bg]}</button>`;
+    const filed = m.folder === 'inbox' || m.folder === 'later' || m.folder === 'snoozed';
+    // On phones these three show as icons; the words stay as their accessible names.
+    const ph = (name) => `<span class="only-phone">${icon(name, 19)}</span>`;
+    const snooze = menuWrap('snooze', `<button type="button" class="btn btn-ghost pill" data-act="menu" data-arg="snooze" aria-haspopup="menu" aria-expanded="${S.menu === 'snooze'}">${ph('clock')}<span class="lbl">Snooze</span></button>`, snoozeItems());
+    const tools = `<div class="toolbar">${back}${bgPill}<span class="grow"></span>
+      ${filed ? `<button type="button" class="btn btn-ghost pill" data-act="archive" data-arg="${m.id}">${ph('archive')}<span class="lbl">Archive</span></button>` : ''}
+      ${m.folder === 'archive' || m.folder === 'later' || m.folder === 'snoozed' ? `<button type="button" class="btn btn-ghost pill" data-act="to-inbox" data-arg="${m.id}">${ph('undo')}<span class="lbl">Move to Inbox</span></button>` : ''}
+      ${filed && !sent ? snooze : ''}
+      <button type="button" class="icon-btn sm" data-act="star" data-arg="${m.id}" aria-pressed="${!!m.starred}" aria-label="Star">${icon('star', 18, m.starred ? 'fill="currentColor"' : '')}</button>
+      ${sent ? '' : `<button type="button" class="btn btn-dark pill" data-act="reply" data-arg="${m.id}">Reply</button>`}
+    </div>`;
+    const vip = isVip(m.from.email);
+    const sender = sent
+      ? `<div class="sender">${avatar(((m.to || [])[0] || {}).name || '?', a, true)}<div class="who"><span class="name">To ${esc((m.to || []).map((r) => r.name || r.email).join(', '))}</span><span class="meta">From ${esc(a ? a.email : '')} · ${m.scheduled ? 'Sends ' + fmtWhen(m.scheduled) : fmtWhen(m.time)}</span></div></div>`
+      : `<div class="sender">${avatar(m.from.name, a, true)}<div class="who"><span class="name">${esc(m.from.name)}</span><span class="meta">${esc(m.from.email)} · ${fmtWhen(m.time)}</span></div>
+          <button type="button" class="vip-btn" data-act="vip" data-arg="${esc(m.from.email)}" aria-pressed="${vip}" title="VIPs can reach you in quiet hours">${icon(vip ? 'check' : 'person', 14)}${vip ? 'VIP' : 'Mark VIP'}</button></div>`;
+    const ruleNames = m.rules.map((id) => P.rules.find((r) => r.id === id)).filter(Boolean).map((r) => r.name);
+    const tags = `<div class="tags"><span class="tag grey"><span class="acct-dot" style="background:${pal(a).dot}"></span>${esc(a ? a.name : '')}</span>
+      ${m.labels.map((l) => `<span class="tag">${esc(l)}</span>`).join('')}
+      ${m.flagged ? `<span class="tag warn">${icon('flag', 12)}Flagged</span>` : ''}
+      ${m.scheduled ? `<span class="tag grey">${icon('clock', 12)}Scheduled</span>` : ''}
+      ${ruleNames.length ? `<span class="via">Filed by ${esc(joinList(ruleNames.map((n) => '“' + n + '”'), 'and'))}</span>` : ''}</div>`;
+    const risky = m.found.filter((f) => f.kind === 'link' || f.kind === 'attachment');
+    const warn = m.released ? `<div class="notice-card"><span>${icon('shield', 18)}</span><div class="txt"><strong>You marked this safe</strong><span>Quill had blocked it as ${BLOCK_LABEL[m.released].toLowerCase()}. Be careful with its links and files.</span></div></div>`
+      : risky.length ? `<div class="notice-card"><span>${icon('warn', 18)}</span><div class="txt"><strong>Quill found something risky in this email</strong><ul>${risky.map((f) => `<li>${esc(f.what)}</li>`).join('')}</ul><span>Flagged links are turned off. Blocking for unsafe links and attachments is off in Settings.</span></div></div>` : '';
+    const summary = m.summary && !sent ? `<div class="summary"><span class="k">${icon('sparkle', 14)}Summary</span><span>${esc(m.summary)}</span></div>` : '';
+    const quick = !sent && m.quick.length ? `<div class="quick" role="group" aria-label="Suggested replies">${m.quick.map((q, i) => `<button type="button" class="btn btn-white pill" data-act="quick" data-arg="${i}">${esc(q)}</button>`).join('')}</div>` : '';
+    const replyBar = sent ? '' : `<form class="reply-bar" data-form="quick-reply" data-id="${m.id}">
+        <label class="sr" for="reply-in">Reply to ${esc(m.from.name)}</label>
+        <input id="reply-in" placeholder="Reply to ${esc(m.from.name)}…" value="${esc(S.reply[m.id] || '')}" data-bind="reply" data-id="${m.id}" autocomplete="off" enterkeyhint="send">
+        <button type="submit" class="btn btn-grad">Send</button></form>`;
+    return `<section class="reader glass" aria-label="Reading pane" data-keep="reader">
+      ${tools}${sender}
+      <h2 class="subject" id="reader-subject" tabindex="-1">${esc(m.subject || '(no subject)')}</h2>
+      ${tags}${warn}${summary}
+      <div class="mail-body">${linkify(m, true)}</div>
+      ${filesHtml(m, true)}${quick}${replyBar}
+    </section>`;
+  }
+
+  function blockedReader(m, a, back) {
+    const severe = m.block.kind === 'phishing' || m.block.kind === 'malware';
+    return `<section class="reader glass" aria-label="Reading pane" data-keep="reader">
+      <div class="toolbar">${back}<span class="grow"></span>
+        <button type="button" class="btn btn-white pill" data-act="release" data-arg="${m.id}">${m.block.kind === 'unknown' ? 'Allow sender' : 'Not spam, move to Inbox'}</button></div>
+      <div class="notice-card${severe ? ' bad' : ''}"><span>${icon('shield', 18)}</span><div class="txt">
+        <strong>Blocked: ${BLOCK_LABEL[m.block.kind]}</strong>
+        ${m.found.length ? `<ul>${m.found.map((f) => `<li>${esc(f.what)}</li>`).join('')}</ul>` : '<span>This is the first email from this sender, so Quill held it for you to check.</span>'}
+        <span>Links and attachments are turned off here. Blocked mail is kept so you can review it; Quill doesn’t delete it.</span></div></div>
+      <div class="sender">${avatar(m.from.name, a, true)}<div class="who"><span class="name">${esc(m.from.name)}</span><span class="meta">${esc(m.from.email)} · ${fmtWhen(m.time)} · ${esc(a ? a.name : '')}</span></div></div>
+      <h2 class="subject" id="reader-subject" tabindex="-1">${esc(m.subject)}</h2>
+      <div class="mail-body">${linkify(m, false)}</div>
+      ${filesHtml(m, false)}
+    </section>`;
+  }
+
+  function snoozeItems() {
+    const now = new Date();
+    const later = Math.max(Date.now() + 3 * HOUR, at(0, 17));
+    const opts = [];
+    if (now.getHours() < 17) opts.push(['today', 'Later today', fmtWhen(later)]);
+    opts.push(['tomorrow', 'Tomorrow', fmtWhen(at(1, 8))]);
+    if (now.getDay() >= 1 && now.getDay() <= 4) opts.push(['weekend', 'This weekend', fmtWhen(nextWeekday(6, 9))]);
+    opts.push(['week', 'Next week', fmtWhen(nextWeekday(1, 8))]);
+    return opts.map(([k, l, h]) => menuItem('snooze', k, l, h)).join('');
+  }
+  function snoozeTime(k) {
+    if (k === 'today') return Math.max(Date.now() + 3 * HOUR, at(0, 17));
+    if (k === 'tomorrow') return at(1, 8);
+    if (k === 'weekend') return nextWeekday(6, 9);
+    return nextWeekday(1, 8);
+  }
+
+  function tabbar() {
+    const off = S.view === 'compose' || (S.view === 'mail' && S.pane === 'read') || (S.view === 'settings' && S.sec);
+    document.body.dataset.tabbar = off ? 'off' : 'on';
+    const cur = S.view === 'settings' ? 'settings' : S.folder === 'needs' && !S.q.trim() ? 'needs' : 'inbox';
+    const c = counts();
+    const tab = (id, label, ic, badge) => `<button type="button" class="tab" data-act="tab" data-arg="${id}" ${cur === id ? 'aria-current="page"' : ''}>${icon(ic, 22)}${label}${badge ? `<span class="badge" aria-label="${badge} waiting">${badge}</span>` : ''}</button>`;
+    return `<nav class="tabbar" aria-label="Main">${tab('inbox', 'Inbox', 'inbox')}${tab('needs', 'Needs reply', 'reply', c.needs)}${tab('compose', 'Compose', 'pen')}${tab('settings', 'Settings', 'gear')}</nav>`;
+  }
+
+  // ---------- compose ----------
+  const BG_NAMES = { aurora: 'Aurora', mist: 'Mist', soft: 'Soft', plain: 'Plain' };
+  function newDraft(o = {}) {
+    const pick = o.from || (account(S.chip) ? S.chip : P.accounts[0].id);
+    const a = account(pick);
+    return {
+      id: uid(), from: pick, to: o.to || [], toText: '', subject: o.subject || '', body: o.body || '',
+      style: a ? a.sig : 'professional', attachments: [], watch: true, replyTo: o.replyTo || null,
+      ask: '', length: 'medium', aiBody: null, saved: false,
+    };
+  }
+  const draftHasWork = (d) => !!(d && (d.body.trim() || d.attachments.length || (!d.replyTo && (d.to.length || d.subject.trim()))));
+  function sigLines(style, acct) {
+    const s = P.signatures[style];
+    if (style === 'professional') {
+      const out = [['', 'Best regards,'], ['nm', s.name, '[Your Name]']];
+      const role = [s.title, s.company].filter(Boolean).join(' · ');
+      if (role) out.push(['', role]);
+      out.push(['sm', [s.phone, acct ? acct.email : '', s.site].filter(Boolean).join(' · ')]);
+      if (s.addr) out.push(['sm', s.addr]);
+      return out;
+    }
+    const out = [['', s.signoff || 'Talk soon,'], ['nm', s.name, '[Your First Name]']];
+    if (s.phone) out.push(['sm', s.phone]);
+    return out;
+  }
+  const sigText = (style, acct) => sigLines(style, acct).map(([, v, ph]) => v || ph).join('\n');
+  function recipientStatus(d) {
+    if (!d.to.length) return '';
+    if (d.to.some((r) => !emailOk(r.email))) return `<span class="tag warn">${icon('warn', 13)}Check the address</span>`;
+    const blockedDomains = new Set(M.messages.filter((m) => m.folder === 'blocked').map((m) => domainOf(m.from.email)));
+    if (d.to.some((r) => blockedDomains.has(domainOf(r.email)))) return `<span class="tag bad">${icon('warn', 13)}This address sent you blocked mail</span>`;
+    const known = contacts();
+    if (d.to.every((r) => known.has(r.email.toLowerCase()))) return `<span class="tag ok">${icon('check', 13)}${d.to.length > 1 ? 'Recipients' : 'Recipient'} checked · safe</span>`;
+    return `<span class="tag grey">${icon('person', 13)}New recipient · address looks right</span>`;
+  }
+  function checks(d) {
+    const a = account(d.from), out = [];
+    if (!d.to.length) out.push(['warn', 'Add at least one recipient']);
+    else if (d.to.some((r) => !emailOk(r.email))) out.push(['warn', 'One address doesn’t look right']);
+    else out.push(['ok', 'Sending to ' + joinList(d.to.map((r) => r.name || r.email), 'and')]);
+    if (!d.subject.trim()) out.push(['warn', 'No subject yet']);
+    if (!d.body.trim()) out.push(['warn', 'The message is empty']);
+    const mentions = /\battach(ed|ing|ment|ments)?\b|\benclosed\b/i.test(d.body);
+    if (mentions && !d.attachments.length) out.push(['warn', 'You mention an attachment, but nothing is attached']);
+    else if (mentions) out.push(['ok', 'Attachment mentioned and attached']);
+    if (d.attachments.some((f) => f.size > 25 * MB)) out.push(['warn', 'A file is over 25 MB, which many inboxes refuse']);
+    if (a && d.style === a.sig) out.push(['ok', `Signature matches the ${a.name} account`]);
+    else if (a) out.push(['note', `${STYLES[d.style]} signature on your ${a.name} account`]);
+    if (!P.signatures[d.style].name.trim()) out.push(['warn', `Your ${STYLES[d.style]} signature has no name yet`, 'sig']);
+    return out;
+  }
+  const checksHtml = (d) => checks(d).map(([k, t, fix]) => `<li class="${k}"><span class="mk">${icon(k === 'ok' ? 'check' : k === 'warn' ? 'warn' : 'dot', 12)}</span><span>${esc(t)}${fix ? ` · <button type="button" class="link-btn" data-act="goto-sigs">Add it</button>` : ''}</span></li>`).join('');
+
+  function composeView() {
+    const d = M.draft, a = account(d.from);
+    const people = Array.from(contacts()).map(([e, n]) => `<option value="${esc(n && n !== e ? `${n} <${e}>` : e)}"></option>`).join('');
+    const orig = d.replyTo && msg(d.replyTo);
+    const busy = S.busy;
+    const styleCard = (k, t, desc) => `<button type="button" class="style-card" data-act="style" data-arg="${k}" aria-pressed="${d.style === k}"><span class="t">${t}</span><span class="d">${desc}</span></button>`;
+    const fixes = Object.entries(FIXES).map(([k, f]) => `<button type="button" class="chip lilac" data-act="fix" data-arg="${k}" ${busy || !d.body.trim() ? 'disabled' : ''}>${f.label}</button>`).join('');
+    const translate = menuWrap('translate', `<button type="button" class="chip lilac" data-act="menu" data-arg="translate" aria-haspopup="menu" aria-expanded="${S.menu === 'translate'}" ${busy || !d.body.trim() ? 'disabled' : ''}>Translate</button>`,
+      LANGUAGES.map((l) => menuItem('translate', l, l)).join(''), 'up left');
+    const schedule = menuWrap('schedule', `<button type="button" class="btn btn-white lg" data-act="menu" data-arg="schedule" aria-haspopup="menu" aria-expanded="${S.menu === 'schedule'}">Schedule</button>`,
+      [['morning', 'Tomorrow morning', fmtWhen(at(1, 8))], ['afternoon', 'Tomorrow afternoon', fmtWhen(at(1, 13))], ['monday', 'Monday morning', fmtWhen(nextWeekday(1, 8))]].map(([k, l, h]) => menuItem('schedule', k, l, h)).join(''), 'up left');
+    const who = d.to[0] ? firstName(d.to[0].name) || d.to[0].email : '';
+    return `<div class="page compose-page">
+      <header class="topbar glass">
+        <button type="button" class="back" data-act="close-compose">${icon('back', 16)} Inbox</button>
+        <span class="title grow">${orig ? 'Reply' : 'New message'}</span>
+        <span id="rcpt-status">${recipientStatus(d)}</span>
+        <span class="saved hide-phone" id="saved" aria-live="polite">${d.saved ? 'Draft saved' : ''}</span>
+        <button type="button" class="btn btn-ghost pill" data-act="discard">Discard</button>
+      </header>
+      <div class="compose-grid">
+        <main class="compose-main">
+          <section class="card pad" aria-labelledby="style-l">
+            <div class="eyebrow" id="style-l">Email style</div>
+            <div class="style-cards">${styleCard('professional', 'Professional', 'Formal greeting, full signature with title, phone and address.')}${styleCard('personal', 'Personal', 'Relaxed tone, short sign-off with just your name.')}</div>
+          </section>
+          <section class="card" aria-label="Message">
+            <div class="frow"><label class="lbl" for="from">From</label>
+              <span class="from-pick"><span class="dot" style="background:${pal(a).dot}"></span>
+              <select id="from" class="input" data-change="from">${P.accounts.map((x) => `<option value="${x.id}" ${x.id === d.from ? 'selected' : ''}>${esc(x.email)}</option>`).join('')}</select></span></div>
+            <div class="frow"><label class="lbl" for="to-in">To</label>
+              <div class="rcpts">${d.to.map((r, i) => `<span class="rcpt${emailOk(r.email) ? '' : ' bad'}" title="${esc(r.email)}">${esc(r.name || r.email)}<button type="button" data-act="rm-rcpt" data-arg="${i}" aria-label="Remove ${esc(r.name || r.email)}">${icon('x', 13)}</button></span>`).join('')}
+              <input id="to-in" class="bare" type="text" inputmode="email" list="people" value="${esc(d.toText)}" data-bind="toText" autocomplete="off" placeholder="${d.to.length ? '' : 'Name or email'}"></div>
+              <datalist id="people">${people}</datalist></div>
+            <div class="frow"><label class="lbl" for="subject">Subject</label><input id="subject" class="bare subject-in" type="text" value="${esc(d.subject)}" data-bind="subject" autocomplete="off"></div>
+            <div class="editor">
+              <label class="sr" for="body">Message</label>
+              <textarea id="body" data-bind="body" placeholder="Write your message, or tell the AI assistant what to say.">${esc(d.body)}</textarea>
+              <div class="sig-note">Signature added automatically · ${STYLES[d.style]}</div>
+              <div class="sig ${d.style}">${sigLines(d.style, a).map(([k, v, ph]) => `<div class="${k}">${v ? esc(v) : `<span class="ph">${esc(ph || '')}</span>`}</div>`).join('')}</div>
+            </div>
+            ${d.attachments.length ? `<ul class="attach-list" aria-label="Attachments">${d.attachments.map((f, i) => `<li class="file"><span class="ico${f.unsafe ? ' bad' : ''}">${icon(/\.(jpe?g|png|gif|webp|heic)$/i.test(f.name) ? 'image' : 'file', 18)}</span>
+                <span class="info"><span class="nm">${esc(f.name)}</span><span class="sz">${fmtSize(f.size)} · file type checked</span></span>
+                ${f.size > 25 * MB ? '<span class="tag warn">Over 25 MB</span>' : '<span class="tag ok">Ready</span>'}
+                <button type="button" class="icon-btn sm" data-act="rm-file" data-arg="${i}" aria-label="Remove ${esc(f.name)}">${icon('x', 16)}</button></li>`).join('')}</ul>` : ''}
+            <div class="compose-foot">
+              <button type="button" class="btn btn-grad lg" data-act="send">Send</button>
+              ${schedule}
+              <button type="button" class="icon-btn" data-act="attach" aria-label="Attach files" style="width:44px;height:44px;border-radius:16px">${icon('clip', 18)}</button>
+              <input type="file" id="file-in" multiple hidden data-change="files">
+              <span class="grow"></span>
+              <label class="foot-check"><input type="checkbox" class="check" data-change="watch" ${d.watch ? 'checked' : ''}>Tell me when ${!who ? 'they reply' : d.to.length > 1 ? esc(who) + ' or the others reply' : esc(who) + ' replies'}</label>
+            </div>
+          </section>
+        </main>
+        <aside class="compose-side" aria-label="AI writing assistant">
+          <section class="card pad-lg">
+            <div class="ai-head">${icon('sparkle', 18)}AI assistant</div>
+            <p class="ai-note">${AI.sample ? 'Writes with Claude.' : 'Basic writing help on this device. Open Quill on claude.ai to write with Claude.'}</p>
+            <div class="field"><label for="ask" style="font-size:13px;color:var(--ink-3)">Tell it what to say</label>
+              <textarea id="ask" class="input" rows="3" data-bind="ask" placeholder="e.g. Say yes to Tuesday 10am and that I’ll bring the new drawings">${esc(d.ask)}</textarea></div>
+            <div class="field"><span class="flabel" id="len-l" style="font-size:13px;color:var(--ink-3)">Length</span>
+              <div class="seg" role="group" aria-labelledby="len-l">${['short', 'medium', 'detailed'].map((k) => `<button type="button" data-act="length" data-arg="${k}" aria-pressed="${d.length === k}">${cap(k)}</button>`).join('')}</div></div>
+            <div style="font-size:13px;color:var(--ink-3)">Tone follows your style: <strong style="color:var(--ink)">${STYLES[d.style]}</strong></div>
+            <button type="button" class="btn btn-dark lg" data-act="write" ${busy ? 'disabled aria-busy="true"' : ''}>${busy === 'write' ? 'Writing…' : 'Write draft'}</button>
+          </section>
+          <section class="card pad-lg" aria-labelledby="fix-l">
+            <div style="font-weight:600" id="fix-l">Quick fixes</div>
+            <div class="chips" style="row-gap:10px">${fixes}${translate}</div>
+            ${busy && busy !== 'write' ? '<div class="ai-note" role="status">Rewriting…</div>' : ''}
+          </section>
+          <section class="card pad-lg" aria-labelledby="chk-l">
+            <div style="font-weight:600" id="chk-l">Before you send</div>
+            <ul class="checks" id="checks">${checksHtml(d)}</ul>
+          </section>
+        </aside>
+      </div>
+    </div>`;
+  }
+
+  // ---------- settings ----------
+  const SECTIONS = [
+    ['accounts', 'Accounts', 'person'], ['appearance', 'Appearance', 'palette'], ['signatures', 'Signatures', 'sign'],
+    ['filters', 'Email filters', 'filter'], ['safety', 'Spam and safety', 'shield'], ['notifications', 'Notifications', 'bell'],
+  ];
+  function secSummary(id) {
+    const c = counts();
+    return {
+      accounts: P.accounts.length + (P.accounts.length === 1 ? ' account' : ' accounts'),
+      appearance: BG_NAMES[P.bg],
+      signatures: 'Professional and Personal',
+      filters: P.rules.filter((r) => r.on).length + ' of ' + P.rules.length + ' rules on',
+      safety: c.blocked ? c.blocked + ' blocked to review' : 'Nothing blocked',
+      notifications: { all: 'All new email', important: 'Important only', vip: 'VIP senders only' }[P.notify.mode],
+    }[id];
+  }
+  function settingsView() {
+    if (S.size === 'phone') {
+      if (!S.sec) {
+        return `<div class="page"><div class="phone-head"><h1>Settings</h1></div><div class="settings">
+          <div class="card set-index">${SECTIONS.map(([id, label, ic]) => `<button type="button" data-act="sec" data-arg="${id}"><span class="ico">${icon(ic, 17)}</span><span class="txt"><span style="font-weight:500">${label}</span><span class="d">${esc(secSummary(id))}</span></span><span class="chev">${icon('chevron', 18)}</span></button>`).join('')}</div>
+        </div></div>${tabbar()}`;
+      }
+      const s = SECTION[S.sec]();
+      return `<div class="page"><div class="phone-head"><button type="button" class="back" data-act="sec" data-arg="">${icon('back', 16)} Settings</button><h1 id="sec-h">${s.title}</h1></div>
+        <div class="settings"><section class="sec" aria-labelledby="sec-h">${s.desc ? `<p style="color:var(--ink-raw);padding:0 6px">${s.desc}</p>` : ''}${s.action || ''}${s.body}</section></div></div>${tabbar()}`;
+    }
+    return `<div class="page">
+      <header class="topbar glass"><button type="button" class="back" data-act="close-settings">${icon('back', 16)} ${S.from === 'compose' && M.draft ? 'Back to draft' : 'Inbox'}</button><span class="title">Settings</span></header>
+      <div class="settings">${SECTIONS.map(([id]) => {
+        const s = SECTION[id]();
+        return `<section class="sec" id="sec-${id}" aria-labelledby="h-${id}"><div class="sec-head"><div><h2 id="h-${id}">${s.title}</h2>${s.desc ? `<p>${s.desc}</p>` : ''}</div>${s.action || ''}</div>${s.body}</section>`;
+      }).join('')}</div>
+    </div>`;
+  }
+  const SECTION = {
+    accounts() {
+      const cards = P.accounts.map((a) => `<div class="card acct-card">
+        <div class="top"><span class="dot" style="background:${pal(a).dot}"></span><span class="nm">${esc(a.name)}</span><span class="tag ok">Synced</span></div>
+        <div class="em">${esc(a.email)}</div>
+        <div class="ft"><label for="sig-${a.id}">Signature</label>
+          <select id="sig-${a.id}" class="input" data-change="acct-sig" data-id="${a.id}">${Object.entries(STYLES).map(([k, l]) => `<option value="${k}" ${a.sig === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        ${P.accounts.length > 1 ? `<button type="button" class="link-btn" style="align-self:flex-start;margin-left:-12px;color:var(--ink-3)" data-act="rm-account" data-arg="${a.id}">Remove account</button>` : ''}
+      </div>`).join('');
+      return { title: 'Accounts', desc: 'Add as many as you like. Everything lands in one calm inbox.', action: '<button type="button" class="btn btn-dark lg" data-act="add-account">Add account</button>', body: `<div class="acct-grid">${cards}</div>` };
+    },
+    appearance() {
+      const tiles = [['aurora', 'moving'], ['mist', 'moving'], ['soft', 'still'], ['plain', 'still']].map(([id, kind]) => `<button type="button" class="bg-tile" data-act="bg" data-arg="${id}" aria-pressed="${P.bg === id}"><span class="sw sw-${id}" aria-hidden="true"></span><span class="lb">${BG_NAMES[id]} <span>· ${kind}</span></span></button>`).join('');
+      return { title: 'Appearance', desc: 'Pick a background. Aurora and Mist move slowly and hold still if your device asks for less motion.', body: `<div class="bg-grid" role="group" aria-label="Background">${tiles}</div>` };
+    },
+    signatures() {
+      const uses = (k) => P.accounts.filter((a) => a.sig === k).map((a) => a.name).join(', ') || 'no account yet';
+      const field = (kind, f, label, ph) => `<div class="field"><label for="s-${kind}-${f}">${label}</label><input id="s-${kind}-${f}" class="input" type="${f === 'phone' ? 'tel' : 'text'}" placeholder="${esc(ph)}" value="${esc(P.signatures[kind][f])}" data-bind="sig" data-kind="${kind}" data-field="${f}" autocomplete="off"></div>`;
+      return {
+        title: 'Signatures', desc: 'Fill these in once. Quill adds the right one to every email.',
+        body: `<div class="sig-cards">
+          <div class="card pad-lg"><div class="card-title">Professional <span>· ${esc(uses('professional'))}</span></div><div class="grid2">
+            ${field('professional', 'name', 'Full name', 'Your Name')}${field('professional', 'title', 'Job title', 'e.g. Project Manager')}${field('professional', 'company', 'Company', 'Your Company')}
+            ${field('professional', 'phone', 'Phone', '(555) 000-0000')}${field('professional', 'site', 'Website', 'yourwebsite.com')}${field('professional', 'addr', 'Address', 'Street, City, State')}</div></div>
+          <div class="card pad-lg"><div class="card-title">Personal <span>· ${esc(uses('personal'))}</span></div>
+            ${field('personal', 'name', 'Name', 'Your First Name')}${field('personal', 'phone', 'Phone', '(555) 000-0000')}${field('personal', 'signoff', 'Sign-off', 'Talk soon,')}</div>
+        </div>`,
+      };
+    },
+    filters() {
+      const items = P.rules.map((r, i) => `<div class="item rule-item${r.on ? '' : ' off'}">
+        <span class="rule-num" aria-hidden="true">${i + 1}</span>
+        <button type="button" class="rule-text" data-act="edit-rule" data-arg="${r.id}" aria-label="Edit rule ${i + 1}: ${esc(r.name)}"><span class="t">${esc(r.name)}</span><span class="d">${esc(ruleDesc(r))}</span></button>
+        <span class="tag">${esc(ruleChip(r))}</span>
+        <span class="order"><button type="button" class="icon-btn sm" data-act="rule-move" data-arg="${r.id}:-1" aria-label="Run ${esc(r.name)} earlier" ${i === 0 ? 'disabled' : ''}>${icon('up', 16)}</button>
+          <button type="button" class="icon-btn sm" data-act="rule-move" data-arg="${r.id}:1" aria-label="Run ${esc(r.name)} later" ${i === P.rules.length - 1 ? 'disabled' : ''}>${icon('down', 16)}</button></span>
+        ${sw(r.on, 'rule-on', r.id, r.name)}
+      </div>`).join('');
+      return {
+        title: 'Email filters', desc: 'Rules run on every new email, in order. Describe what to match and where it should go.',
+        action: '<button type="button" class="btn btn-dark lg" data-act="new-rule">New rule</button>',
+        body: `<div class="card list-card">${items || '<div class="item"><span class="txt"><span class="d">No rules yet.</span></span></div>'}</div>`,
+      };
+    },
+    safety() {
+      const c = counts();
+      const row = (t, d, right) => `<div class="item"><div class="txt"><span class="t">${t}</span><span class="d">${d}</span></div>${right}</div>`;
+      return {
+        title: 'Spam and safety', desc: 'Unsafe messages are blocked automatically. You can review what was stopped at any time.',
+        body: `<div class="card list-card">
+          ${row('Block phishing and malware', 'Dangerous messages go straight to Blocked.', `<span class="note">${icon('lock', 13)}Always on</span>${sw(true, 'noop', '', 'Block phishing and malware, always on', 'aria-disabled="true"')}`)}
+          ${row('Block unsafe links and attachments', 'Links and files are scanned before they reach your inbox.', sw(P.safety.unsafe, 'safety', 'unsafe', 'Block unsafe links and attachments'))}
+          ${row('Hold unknown senders for review', 'First emails from new people wait in Blocked until you allow them.', sw(P.safety.holdUnknown, 'safety', 'holdUnknown', 'Hold unknown senders for review'))}
+          ${row('Blocked mail', c.blocked ? `${c.blocked} ${c.blocked === 1 ? 'message is' : 'messages are'} kept for you to review. Nothing is deleted.` : 'Nothing has been blocked.', `<button type="button" class="btn btn-white pill" data-act="review-blocked">Review</button>`)}
+        </div>`,
+      };
+    },
+    notifications() {
+      const mode = (id, t, d) => `<label class="radio-row"><input type="radio" class="radio" name="nmode" id="nm-${id}" value="${id}" data-change="nmode" ${P.notify.mode === id ? 'checked' : ''}><span class="txt"><span style="font-weight:500">${t}</span><span class="d">${d}</span></span></label>`;
+      const per = P.accounts.map((a) => `<div class="item" style="padding:12px 0"><span class="acct-dot" style="width:10px;height:10px;border-radius:5px;background:${pal(a).dot}"></span><span class="txt"><span class="t">${esc(a.name)}</span><span class="d">${esc(a.email)}</span></span>${sw(!!a.notify, 'acct-notify', a.id, 'Notifications for ' + a.name)}</div>`).join('');
+      const q = P.notify.quiet;
+      const vips = P.vips.map((e) => { const n = contacts().get(e); return `<span class="rcpt">${esc(n && n !== e ? n : e)}<button type="button" data-act="rm-vip" data-arg="${esc(e)}" aria-label="Remove ${esc(n || e)} from VIPs">${icon('x', 13)}</button></span>`; }).join('');
+      return {
+        title: 'Notifications', desc: 'Choose what can reach you, for each account, and when Quill stays quiet.',
+        body: `<div class="notif-grid">
+          <div><fieldset><legend class="sub-label" style="margin-bottom:8px">Notify me about</legend><div class="card list-card">
+            ${mode('all', 'All new email', 'Every message, every account.')}${mode('important', 'Important only', 'People you know, deadlines and questions for you.')}${mode('vip', 'VIP senders only', 'Just the people you mark as VIP.')}
+          </div></fieldset>
+          <div class="sub-label" style="margin-top:10px">Per account</div><div class="card list-card">${per}</div></div>
+          <div><div class="sub-label">Quiet hours</div><div class="card quiet">
+            <div class="row1"><span class="t" id="quiet-l">Pause notifications</span>${sw(q.on, 'quiet', '', 'Pause notifications during quiet hours')}</div>
+            <div class="times"><div class="field"><label for="q-from">From</label><input id="q-from" type="time" class="input" value="${esc(q.from)}" data-change="quiet-from" ${q.on ? '' : 'disabled'}></div>
+              <div class="field"><label for="q-to">To</label><input id="q-to" type="time" class="input" value="${esc(q.to)}" data-change="quiet-to" ${q.on ? '' : 'disabled'}></div></div>
+            <label class="foot-check" style="min-height:32px"><input type="checkbox" class="check" data-change="quiet-vip" ${q.vip ? 'checked' : ''} ${q.on ? '' : 'disabled'}>VIP senders still come through</label>
+          </div>
+          <div class="sub-label" style="margin-top:10px">VIP senders</div><div class="card quiet">
+            ${P.vips.length ? `<div class="vips">${vips}</div>` : ''}<span class="ai-note">Mark someone as VIP from any of their emails.</span></div>
+          <div class="info-card" style="margin-top:6px">${icon('sparkle', 18)}<div>Important means people you know asking you something or mentioning a deadline, plus your VIPs. Newsletters and promotions never buzz your phone, and unsafe messages are blocked before they arrive.</div></div>
+          </div>
+        </div>`,
+      };
+    },
+  };
+
+  // ---------- dialogs ----------
+  function dialogHtml() {
+    const d = S.dialog;
+    if (!d) return '';
+    const err = d.error ? `<p role="alert" style="color:var(--bad);font-size:13px">${esc(d.error)}</p>` : '';
+    if (d.type === 'confirm') {
+      return `<form class="dlg" data-form="confirm"><h2 id="dlg-title">${esc(d.title)}</h2><p>${esc(d.text)}</p>
+        <div class="acts"><button type="button" class="btn btn-ghost" data-act="dlg-cancel">${esc(d.cancel || 'Cancel')}</button><button type="submit" class="btn ${d.danger ? 'btn-danger' : 'btn-dark'}" autofocus>${esc(d.ok)}</button></div></form>`;
+    }
+    if (d.type === 'account') {
+      const v = d.data;
+      return `<form class="dlg" data-form="account"><h2 id="dlg-title">Add an account</h2>
+        <div class="field"><label for="a-name">Name</label><input id="a-name" class="input" value="${esc(v.name)}" data-bind="dlg" data-field="name" placeholder="e.g. Freelance" autofocus autocomplete="off"></div>
+        <div class="field"><label for="a-email">Email address</label><input id="a-email" class="input" type="email" value="${esc(v.email)}" data-bind="dlg" data-field="email" placeholder="you@example.com" autocomplete="off"></div>
+        <div class="field"><label for="a-sig">Signature</label><select id="a-sig" class="input" data-change="dlg" data-field="sig">${Object.entries(STYLES).map(([k, l]) => `<option value="${k}" ${v.sig === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div class="field"><span class="flabel" id="a-color">Color</span><div class="swatches" role="group" aria-labelledby="a-color">${PALETTE.map((p, i) => `<button type="button" data-act="dlg-color" data-arg="${i}" aria-pressed="${v.color === i}" aria-label="Color ${i + 1}" style="background:${p.dot}"></button>`).join('')}</div></div>
+        ${err}<div class="acts"><button type="button" class="btn btn-ghost" data-act="dlg-cancel">Cancel</button><button type="submit" class="btn btn-dark">Add account</button></div></form>`;
+    }
+    const v = d.data, W = RULE_WHEN[v.when];
+    const pos = d.id ? P.rules.findIndex((r) => r.id === d.id) + 1 : P.rules.length + 1;
+    return `<form class="dlg" data-form="rule"><h2 id="dlg-title">${d.id ? 'Edit rule' : 'New rule'}</h2>
+      <div class="field"><label for="r-name">Name</label><input id="r-name" class="input" value="${esc(v.name)}" data-bind="dlg" data-field="name" placeholder="e.g. Receipts" autofocus autocomplete="off"></div>
+      <div class="field"><label for="r-when">When an email</label><select id="r-when" class="input" data-change="dlg" data-field="when" data-redraw="1">${Object.entries(RULE_WHEN).map(([k, w]) => `<option value="${k}" ${v.when === k ? 'selected' : ''}>${w.label}</option>`).join('')}</select></div>
+      ${W && W.value ? `<div class="field"><label for="r-value">${W.value === 'mb' ? 'Size in MB' : 'Words, separated by commas'}</label><input id="r-value" class="input" type="${W.value === 'mb' ? 'number' : 'text'}" ${W.value === 'mb' ? 'min="1" step="1"' : ''} value="${esc(v.value)}" data-bind="dlg" data-field="value" autocomplete="off"></div>` : ''}
+      <div class="field"><label for="r-then">Then</label><select id="r-then" class="input" data-change="dlg" data-field="then" data-redraw="1">${Object.entries(RULE_THEN).map(([k, t]) => `<option value="${k}" ${v.then === k ? 'selected' : ''}>${t.label}</option>`).join('')}</select></div>
+      ${v.then === 'label' ? `<div class="field"><label for="r-label">Label</label><input id="r-label" class="input" value="${esc(v.label)}" data-bind="dlg" data-field="label" placeholder="e.g. Receipts" autocomplete="off"></div>` : ''}
+      <p style="font-size:13px;color:var(--ink-3)">Rules run on new mail, in order. This one runs ${pos === 1 ? 'first' : 'at position ' + pos}.</p>
+      ${err}<div class="acts">${d.id ? '<button type="button" class="btn btn-danger left" data-act="rule-delete">Delete rule</button>' : ''}<button type="button" class="btn btn-ghost" data-act="dlg-cancel">Cancel</button><button type="submit" class="btn btn-dark">Save rule</button></div></form>`;
+  }
+
+  // ---------- render ----------
+  const app = $('#app'), bgEl = $('#bg'), dlg = $('#dialog');
+  let lastKey = '';
+  const selectorOf = (el) => {
+    if (!el || el === document.body) return null;
+    if (el.id) return '#' + CSS.escape(el.id);
+    if (el.dataset && el.dataset.act) return `[data-act="${el.dataset.act}"]` + (el.dataset.arg != null ? `[data-arg="${CSS.escape(el.dataset.arg)}"]` : '');
+    return null;
+  };
+  function snapshot(root) {
+    const a = document.activeElement, f = { scroll: {}, y: window.scrollY, sel: null };
+    $$('[data-keep]', root).forEach((el) => { f.scroll[el.dataset.keep] = el.scrollTop; });
+    if (a && root.contains(a)) {
+      f.sel = selectorOf(a);
+      try { f.s = a.selectionStart; f.e = a.selectionEnd; } catch (e) { f.s = null; }
+    }
+    return f;
+  }
+  function restore(root, f, same) {
+    if (same) {
+      $$('[data-keep]', root).forEach((el) => { const v = f.scroll[el.dataset.keep]; if (v != null) el.scrollTop = v; });
+      if (window.scrollY !== f.y) window.scrollTo(0, f.y);
+    }
+    const el = f.sel && $(f.sel, root);
+    if (el) {
+      el.focus({ preventScroll: true });
+      if (f.s != null && typeof el.setSelectionRange === 'function') { try { el.setSelectionRange(f.s, f.e); } catch (e) { /* not a text field */ } }
+    }
+  }
+  function ensureSel() {
+    if (S.view !== 'mail' || S.size === 'phone') return;
+    const list = visible();
+    if (!S.sel || !list.some((m) => m.id === S.sel)) S.sel = list.length ? list[0].id : null;
+  }
+  function render() {
+    const f = snapshot(app);
+    bgEl.className = 'bg-' + P.bg;
+    ensureSel();
+    const key = [S.view, S.pane, S.sec || '', S.view === 'mail' ? S.folder : ''].join('|');
+    app.innerHTML = S.view === 'compose' ? composeView() : S.view === 'settings' ? settingsView() : mailView();
+    document.body.dataset.tabbar = S.view === 'compose' || (S.view === 'mail' && S.pane === 'read') || (S.view === 'settings' && S.sec) ? 'off' : 'on';
+    document.body.dataset.view = S.view;
+    restore(app, f, key === lastKey);
+    lastKey = key;
+    if (S.focus) { const el = $(S.focus, app); S.focus = null; if (el) el.focus(); }
+  }
+  const refreshChecks = () => { const el = $('#checks'); if (el && M.draft) el.innerHTML = checksHtml(M.draft); };
+
+  // ---------- toast and notification banner ----------
+  let toastT = 0, toastUndo = null;
+  function toast(text, undo) {
+    toastUndo = undo || null;
+    $('#toast').innerHTML = `<div class="toast"><span>${esc(text)}</span>${undo ? '<button type="button" data-act="undo">Undo</button>' : ''}</div>`;
+    clearTimeout(toastT);
+    toastT = setTimeout(() => { $('#toast').innerHTML = ''; toastUndo = null; }, undo ? 6000 : 3500);
+  }
+  let noticeT = 0;
+  function showNotice(m) {
+    const a = account(m.acct);
+    $('#notice').innerHTML = `<div class="notice">
+      <button type="button" class="open" data-act="open-notice" data-arg="${m.id}">${avatar(m.from.name, a)}
+        <span class="txt"><span class="k"><span class="acct-dot" style="background:${pal(a).dot}"></span>${esc(a ? a.name : '')} · now</span><span class="f">${esc(m.from.name)}</span><span class="s">${esc(m.subject)}</span></span></button>
+      <button type="button" class="icon-btn sm" data-act="close-notice" aria-label="Dismiss notification">${icon('x', 16)}</button></div>`;
+    clearTimeout(noticeT);
+    noticeT = setTimeout(hideNotice, 8000);
+  }
+  function hideNotice() { clearTimeout(noticeT); $('#notice').innerHTML = ''; }
+
+  // ---------- dialogs ----------
+  function openDialog(d) {
+    S.dialog = d;
+    S.dlgFrom = selectorOf(document.activeElement);
+    dlg.innerHTML = dialogHtml();
+    if (!dlg.open) dlg.showModal();
+    const first = $('[autofocus]', dlg);
+    if (first) first.focus();
+  }
+  function renderDialog() {
+    const f = snapshot(dlg);
+    dlg.innerHTML = dialogHtml();
+    restore(dlg, f, false);
+  }
+  function closeDialog() { if (dlg.open) dlg.close(); }
+  dlg.addEventListener('close', () => {
+    S.dialog = null;
+    dlg.innerHTML = '';
+    const back = S.dlgFrom && $(S.dlgFrom, app);
+    if (back) back.focus();
+  });
+  dlg.addEventListener('click', (e) => { if (e.target === dlg) closeDialog(); });
+  const confirmDo = (o) => openDialog(Object.assign({ type: 'confirm' }, o));
+
+  // ---------- mail actions ----------
+  function afterRemoval(list, id) {
+    if (S.size === 'phone') { S.pane = 'list'; S.sel = null; return; }
+    const i = list.findIndex((x) => x.id === id);
+    S.sel = ((list[i + 1] || list[i - 1]) || {}).id || null;
+  }
+  function moveTo(m, folder, note, extra) {
+    const list = visible(), prev = { folder: m.folder, snoozeUntil: m.snoozeUntil };
+    m.folder = folder;
+    if (folder !== 'snoozed') delete m.snoozeUntil;
+    Object.assign(m, extra);
+    save();
+    afterRemoval(list, m.id);
+    render();
+    toast(note, () => { Object.assign(m, prev); save(); render(); });
+  }
+  function applyRules(m) {
+    for (const r of P.rules) {
+      const W = RULE_WHEN[r.when], T = RULE_THEN[r.then];
+      if (r.on && W && T && W.test(m, r) && !m.rules.includes(r.id)) { T.apply(m, r); m.rules.push(r.id); }
+    }
+  }
+  function sendMessage(d, when) {
+    const a = account(d.from);
+    M.messages.push({
+      id: uid(), acct: d.from, from: { name: P.signatures[d.style].name || a.name, email: a.email }, to: d.to.slice(),
+      subject: d.subject.trim(), body: d.body.trim() + '\n\n' + sigText(d.style, a), summary: '', time: when || Date.now(), scheduled: when || null,
+      unread: false, starred: false, flagged: false, labels: [], rules: [], attachments: d.attachments.map((f) => ({ name: f.name, size: f.size })),
+      links: [], quick: [], needsReply: false, important: false, unsubscribe: false, auth: 'pass', folder: 'sent', found: [], block: null, watch: !!d.watch,
+    });
+    if (d.replyTo) { const o = msg(d.replyTo); if (o) o.replied = true; }
+  }
+  function goMail(patch) {
+    Object.assign(S, { view: 'mail', menu: null, drawer: false, pane: 'list', searching: false, q: '' }, patch || {});
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  // ---------- compose actions ----------
+  let draftT = 0;
+  function touchDraft() {
+    const d = M.draft;
+    if (!d) return;
+    d.saved = false;
+    clearTimeout(draftT);
+    draftT = setTimeout(() => {
+      if (M.draft !== d) return;
+      d.saved = true;
+      save();
+      const el = $('#saved');
+      if (el) el.textContent = 'Draft saved';
+    }, 700);
+    const el = $('#saved');
+    if (el) el.textContent = '';
+  }
+  function openCompose(o) {
+    const d = M.draft;
+    const go = (draft, focus) => {
+      M.draft = draft;
+      Object.assign(S, { view: 'compose', menu: null, drawer: false, busy: null, from: null, focus });
+      save();
+      render();
+      window.scrollTo(0, 0);
+    };
+    if (!o || !o.replyTo) {
+      if (draftHasWork(d)) {
+        return confirmDo({ title: 'You have an unsent draft', text: `Pick up where you left off${d.subject ? ` on “${d.subject}”` : ''}, or start a new message. A new message replaces the draft.`, ok: 'Start new', cancel: 'Open draft', onCancel: () => go(d, '#body'), run: () => go(newDraft(), '#to-in') });
+      }
+      return go(newDraft(), '#to-in');
+    }
+    const m = msg(o.replyTo);
+    if (!m) return;
+    const fresh = () => go(newDraft({ from: m.acct, to: [{ name: m.from.name, email: m.from.email }], subject: /^re:/i.test(m.subject) ? m.subject : 'Re: ' + m.subject, replyTo: m.id }), '#ask');
+    if (d && d.replyTo === m.id) return go(d, '#body');
+    if (draftHasWork(d)) return confirmDo({ title: 'Replace your unsent draft?', text: `You have a draft${d.subject ? ` (“${d.subject}”)` : ''} that hasn’t been sent. Starting this reply replaces it.`, ok: 'Start reply', cancel: 'Keep my draft', run: fresh });
+    fresh();
+  }
+  function parseRecipient(s) {
+    const t = s.trim().replace(/^[,;\s]+|[,;\s]+$/g, '');
+    if (!t) return null;
+    const m = t.match(/^(.*)<([^>]+)>$/);
+    if (m) return { name: m[1].trim().replace(/^"|"$/g, ''), email: m[2].trim().toLowerCase() };
+    const known = contacts();
+    if (t.includes('@')) { const e = t.toLowerCase(); return { name: known.get(e) || '', email: e }; }
+    const hit = Array.from(known).find(([, n]) => n && n.toLowerCase().startsWith(t.toLowerCase()));
+    return hit ? { name: hit[1], email: hit[0] } : { name: t, email: t };
+  }
+  function commitRecipients() {
+    const d = M.draft;
+    if (!d || !d.toText.trim()) return false;
+    d.toText.split(/[,;]/).map(parseRecipient).filter(Boolean).forEach((r) => { if (!d.to.some((x) => x.email === r.email)) d.to.push(r); });
+    d.toText = '';
+    touchDraft();
+    return true;
+  }
+  function readyToSend() {
+    const d = M.draft;
+    commitRecipients();
+    if (!d.to.length) { toast('Add a recipient first.'); S.focus = '#to-in'; render(); return false; }
+    if (d.to.some((r) => !emailOk(r.email))) { toast('Fix the address marked in red first.'); S.focus = '#to-in'; render(); return false; }
+    if (!d.body.trim()) { toast('Write something first.'); S.focus = '#body'; render(); return false; }
+    return true;
+  }
+  async function writeDraft() {
+    const d = M.draft;
+    if (!d || S.busy) return;
+    if (!d.ask.trim()) { toast('Tell the assistant what to say first.'); S.focus = '#ask'; render(); return; }
+    const orig = d.replyTo && msg(d.replyTo), r = d.to[0], prev = d.body;
+    S.busy = 'write';
+    render();
+    try {
+      const text = AI.sample ? await AI.ask(draftPrompt(d, orig, r ? r.name || r.email : '')) : Basic.write({ ask: d.ask, length: d.length, style: d.style, name: r ? firstName(r.name) : '', orig });
+      if (M.draft !== d) return;
+      d.body = text;
+      d.aiBody = text;
+      touchDraft();
+      S.busy = null;
+      render();
+      toast('Draft written', () => { d.body = prev; d.aiBody = null; touchDraft(); render(); });
+    } catch (e) {
+      S.busy = null;
+      render();
+      toast('Couldn’t write a draft just now. Try again.');
+    }
+  }
+  const FIX_DONE = { shorter: 'Made it shorter', friendly: 'Made it friendlier', formal: 'Made it more formal', grammar: 'Fixed grammar' };
+  async function runFix(kind, lang) {
+    const d = M.draft;
+    if (!d || !d.body.trim() || S.busy) return;
+    const prev = d.body;
+    S.busy = kind;
+    S.menu = null;
+    render();
+    try {
+      const text = AI.sample ? await AI.ask(fixPrompt(lang ? `Translate it into ${lang}.` : FIXES[kind].ask, d.body)) : Basic[kind](d.body);
+      if (M.draft !== d) return;
+      S.busy = null;
+      if (!text.trim() || text.trim() === prev.trim()) { render(); toast(kind === 'grammar' ? 'No fixes needed.' : 'Nothing to change.'); return; }
+      if (d.aiBody === prev) d.aiBody = text;
+      d.body = text;
+      touchDraft();
+      render();
+      toast(lang ? 'Translated into ' + lang : FIX_DONE[kind], () => { d.body = prev; touchDraft(); render(); });
+    } catch (e) {
+      S.busy = null;
+      render();
+      toast('Couldn’t do that just now. Try again.');
+    }
+  }
+
+  // ---------- click actions ----------
+  const ACT = {
+    noop() {},
+    undo() { const u = toastUndo; $('#toast').innerHTML = ''; toastUndo = null; if (u) u(); },
+    folder(f) { goMail({ folder: f, sel: null }); },
+    chip(c) { goMail({ chip: c, folder: S.view === 'mail' && S.folder !== 'blocked' ? S.folder : 'inbox', sel: null }); },
+    tab(id) {
+      if (id === 'compose') return openCompose();
+      if (id === 'settings') { Object.assign(S, { view: 'settings', sec: null, from: null }); render(); window.scrollTo(0, 0); return; }
+      goMail({ folder: id === 'needs' ? 'needs' : 'inbox', sel: null });
+    },
+    open(id) {
+      const m = msg(id);
+      if (!m) return;
+      S.sel = id;
+      S.menu = null;
+      if (m.unread) { m.unread = false; save(); }
+      if (S.size === 'phone') {
+        S.listY = window.scrollY;
+        S.pane = 'read';
+        S.focus = '#reader-subject';
+        render();
+        window.scrollTo(0, 0);
+      } else render();
+    },
+    'back-list'() {
+      const id = S.sel;
+      S.pane = 'list';
+      render();
+      window.scrollTo(0, S.listY);
+      const el = $(`[data-act="open"][data-arg="${id}"]`, app);
+      if (el) el.focus({ preventScroll: true });
+    },
+    search() { S.searching = !S.searching; if (!S.searching) S.q = ''; S.focus = S.searching ? '#q' : '[data-act="search"]'; render(); },
+    drawer(v) { S.drawer = v === '1'; S.focus = S.drawer ? '.sidebar .nav-item' : '[data-act="drawer"][data-arg="1"]'; render(); },
+    compose() { openCompose(); },
+    settings() { Object.assign(S, { view: 'settings', sec: null, drawer: false, from: null }); render(); window.scrollTo(0, 0); },
+    'close-settings'() { if (S.from === 'compose' && M.draft) { S.view = 'compose'; S.from = null; render(); window.scrollTo(0, 0); } else goMail(); },
+    sec(id) { S.sec = id || null; render(); window.scrollTo(0, 0); },
+    menu(id) {
+      if (id === 'translate' && !AI.sample) { toast('Translating needs Claude. Open Quill on claude.ai to translate.'); return; }
+      S.menu = S.menu === id ? null : id;
+      S.focus = S.menu ? '.menu button' : null;
+      render();
+    },
+    archive(id) { const m = msg(id); if (m) moveTo(m, 'archive', 'Archived'); },
+    'to-inbox'(id) { const m = msg(id); if (m) moveTo(m, 'inbox', 'Moved to Inbox'); },
+    snooze(k) {
+      const m = msg(S.sel);
+      if (!m) return;
+      const t = snoozeTime(k);
+      S.menu = null;
+      moveTo(m, 'snoozed', 'Snoozed until ' + fmtWhen(t), { snoozeUntil: t });
+    },
+    star(id) { const m = msg(id); if (!m) return; m.starred = !m.starred; save(); render(); },
+    reply(id) { openCompose({ replyTo: id }); },
+    quick(i) { const m = msg(S.sel); if (!m) return; S.reply[m.id] = m.quick[Number(i)] || ''; S.focus = '#reply-in'; render(); },
+    vip(email) {
+      const e = String(email).toLowerCase(), name = contacts().get(e) || e;
+      if (isVip(e)) { P.vips = P.vips.filter((x) => x !== e); toast(`${name} is no longer a VIP`); }
+      else { P.vips.push(e); toast(`${name} is a VIP: they can reach you in quiet hours`); }
+      save();
+      render();
+    },
+    'rm-vip'(email) { P.vips = P.vips.filter((x) => x !== email); save(); render(); },
+    release(id) {
+      const m = msg(id);
+      if (!m || !m.block) return;
+      const kind = m.block.kind;
+      const go = () => {
+        const list = visible();
+        m.folder = 'inbox';
+        m.block = null;
+        m.released = kind === 'unknown' ? null : kind;
+        applyRules(m);
+        save();
+        afterRemoval(list, m.id);
+        render();
+        toast(kind === 'unknown' ? `${m.from.name} can reach your inbox now` : 'Moved to ' + (m.folder === 'later' ? 'Later' : 'Inbox'));
+      };
+      if (kind === 'phishing' || kind === 'malware') {
+        confirmDo({ title: 'Move this to your Inbox?', text: `Quill blocked it as ${BLOCK_LABEL[kind].toLowerCase()}. Its links and files could be dangerous. Only do this if you know the sender.`, ok: 'Move to Inbox', danger: true, run: go });
+      } else go();
+    },
+    'review-blocked'() { goMail({ folder: 'blocked', chip: 'all', sel: null }); },
+    'open-notice'(id) { hideNotice(); if (!msg(id)) return; goMail({ folder: 'inbox', chip: 'all', sel: id }); ACT.open(id); },
+    'close-notice'() { hideNotice(); },
+    'next-bg'() { const order = ['aurora', 'soft', 'mist', 'plain']; P.bg = order[(order.indexOf(P.bg) + 1) % order.length]; save(); render(); },
+    bg(id) { P.bg = id; save(); render(); },
+
+    // compose
+    'close-compose'() {
+      if (draftHasWork(M.draft)) { save(); toast('Draft saved'); } else M.draft = null;
+      save();
+      goMail();
+    },
+    discard() {
+      const d = M.draft;
+      M.draft = null;
+      save();
+      goMail();
+      if (draftHasWork(d)) toast('Draft discarded', () => { M.draft = d; S.view = 'compose'; save(); render(); });
+    },
+    style(k) {
+      const d = M.draft;
+      if (!d || d.style === k) return;
+      const rewrite = d.aiBody && d.aiBody === d.body && d.ask.trim();
+      d.style = k;
+      touchDraft();
+      if (rewrite) writeDraft(); else render();
+    },
+    length(k) { M.draft.length = k; touchDraft(); render(); },
+    write() { writeDraft(); },
+    fix(k) { runFix(k); },
+    translate(lang) { runFix('translate', lang); },
+    attach() { $('#file-in').click(); },
+    'rm-file'(i) { M.draft.attachments.splice(Number(i), 1); touchDraft(); render(); },
+    'rm-rcpt'(i) { M.draft.to.splice(Number(i), 1); touchDraft(); S.focus = '#to-in'; render(); },
+    send() {
+      if (!readyToSend()) return;
+      const d = M.draft, a = account(d.from);
+      sendMessage(d, null);
+      M.draft = null;
+      save();
+      goMail();
+      toast('Sent from ' + a.email);
+    },
+    schedule(k) {
+      S.menu = null;
+      if (!readyToSend()) return;
+      const when = k === 'morning' ? at(1, 8) : k === 'afternoon' ? at(1, 13) : nextWeekday(1, 8);
+      sendMessage(M.draft, when);
+      M.draft = null;
+      save();
+      goMail();
+      toast('Scheduled for ' + fmtWhen(when));
+    },
+    'goto-sigs'() {
+      S.from = 'compose';
+      S.view = 'settings';
+      S.sec = S.size === 'phone' ? 'signatures' : null;
+      render();
+      const sec = $('#sec-signatures');
+      if (sec) sec.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth' });
+      const input = $(`#s-${M.draft ? M.draft.style : 'professional'}-name`);
+      if (input) input.focus({ preventScroll: !!sec });
+    },
+
+    // settings
+    'add-account'() {
+      const used = new Set(P.accounts.map((a) => a.color));
+      const color = PALETTE.findIndex((p, i) => !used.has(i));
+      openDialog({ type: 'account', data: { name: '', email: '', sig: 'professional', color: color < 0 ? 0 : color } });
+    },
+    'rm-account'(id) {
+      const a = account(id);
+      if (!a) return;
+      confirmDo({
+        title: `Remove ${a.name}?`, text: `Mail from ${a.email} is removed from Quill on this device. You can add the account again later.`, ok: 'Remove account', danger: true,
+        run: () => {
+          P.accounts = P.accounts.filter((x) => x.id !== id);
+          M.messages = M.messages.filter((m) => m.acct !== id);
+          if (S.chip === id) S.chip = 'all';
+          if (M.draft && M.draft.from === id) M.draft.from = P.accounts[0].id;
+          S.sel = null;
+          save();
+          render();
+          toast(a.name + ' removed');
+        },
+      });
+    },
+    'new-rule'() { openDialog({ type: 'rule', id: null, data: { name: '', when: 'subject', value: '', then: 'label', label: '' } }); },
+    'edit-rule'(id) { const r = P.rules.find((x) => x.id === id); if (r) openDialog({ type: 'rule', id, data: Object.assign({ label: '' }, r) }); },
+    'rule-move'(arg) {
+      const [id, dir] = arg.split(':'), i = P.rules.findIndex((r) => r.id === id), j = i + Number(dir);
+      if (i < 0 || j < 0 || j >= P.rules.length) return;
+      [P.rules[i], P.rules[j]] = [P.rules[j], P.rules[i]];
+      save();
+      render();
+      const same = $(`[data-act="rule-move"][data-arg="${arg}"]`, app);
+      if (same && same.disabled) { const other = $(`[data-act="rule-move"][data-arg="${id}:${-Number(dir)}"]`, app); if (other) other.focus(); }
+    },
+    'rule-on'(id) { const r = P.rules.find((x) => x.id === id); if (r) { r.on = !r.on; save(); render(); } },
+    'rule-delete'() {
+      const id = S.dialog && S.dialog.id, i = P.rules.findIndex((r) => r.id === id);
+      if (i < 0) return;
+      const [gone] = P.rules.splice(i, 1);
+      closeDialog();
+      save();
+      render();
+      toast('Rule deleted', () => { P.rules.splice(i, 0, gone); save(); render(); });
+    },
+    safety(k) { P.safety[k] = !P.safety[k]; save(); render(); },
+    'acct-notify'(id) { const a = account(id); if (a) { a.notify = !a.notify; save(); render(); } },
+    quiet() { P.notify.quiet.on = !P.notify.quiet.on; save(); render(); },
+    'dlg-cancel'() { const d = S.dialog; closeDialog(); if (d && d.onCancel) d.onCancel(); },
+    'dlg-color'(i) { S.dialog.data.color = Number(i); renderDialog(); },
+  };
+
+  // ---------- forms ----------
+  const FORM = {
+    'quick-reply'(form) {
+      const m = msg(form.dataset.id), text = (S.reply[form.dataset.id] || '').trim();
+      if (!m) return;
+      if (!text) { toast('Type a reply or pick a suggestion.'); $('#reply-in').focus(); return; }
+      const a = account(m.acct);
+      sendMessage({ from: m.acct, to: [{ name: m.from.name, email: m.from.email }], subject: /^re:/i.test(m.subject) ? m.subject : 'Re: ' + m.subject, body: /[.!?]$/.test(text) ? text : text + '.', style: a.sig, attachments: [], watch: false, replyTo: m.id }, null);
+      S.reply[m.id] = '';
+      save();
+      render();
+      toast('Reply sent to ' + m.from.name);
+    },
+    confirm() { const d = S.dialog; closeDialog(); if (d && d.run) d.run(); },
+    account() {
+      const v = S.dialog.data, name = v.name.trim(), email = v.email.trim().toLowerCase();
+      if (!name) { S.dialog.error = 'Give the account a name.'; return renderDialog(); }
+      if (!emailOk(email)) { S.dialog.error = 'Enter a full email address, like you@example.com.'; return renderDialog(); }
+      if (P.accounts.some((a) => a.email === email)) { S.dialog.error = 'That account is already in Quill.'; return renderDialog(); }
+      P.accounts.push({ id: 'a' + uid(), name, email, color: v.color, sig: v.sig, notify: true });
+      closeDialog();
+      save();
+      render();
+      toast(name + ' added');
+    },
+    rule() {
+      const v = S.dialog.data, W = RULE_WHEN[v.when];
+      if (W.value === 'text' && !words(v.value).length) { S.dialog.error = 'Add at least one word to match.'; return renderDialog(); }
+      if (W.value === 'mb' && !(Number(v.value) >= 1)) { S.dialog.error = 'Enter a size of 1 MB or more.'; return renderDialog(); }
+      if (v.then === 'label' && !String(v.label || '').trim()) { S.dialog.error = 'Name the label.'; return renderDialog(); }
+      const rule = { id: S.dialog.id || 'r' + uid(), name: '', when: v.when, value: W.value ? String(v.value).trim() : '', then: v.then, label: v.then === 'label' ? v.label.trim() : '', on: true };
+      rule.name = v.name.trim() || W.describe(rule);
+      const i = P.rules.findIndex((r) => r.id === rule.id);
+      if (i >= 0) P.rules[i] = Object.assign({}, P.rules[i], rule, { note: P.rules[i].when === rule.when && P.rules[i].value === rule.value ? P.rules[i].note : undefined, short: P.rules[i].name === rule.name ? P.rules[i].short : undefined });
+      else P.rules.push(rule);
+      closeDialog();
+      save();
+      render();
+      toast(i >= 0 ? 'Rule saved' : 'Rule added. It runs on new mail.');
+    },
+  };
+
+  // ---------- typing and picking ----------
+  const BIND = {
+    q(v) { S.q = v; render(); },
+    reply(v, el) { S.reply[el.dataset.id] = v; },
+    toText(v) {
+      M.draft.toText = v;
+      if (/<[^>]+@[^>]+>\s*$/.test(v)) { commitRecipients(); S.focus = '#to-in'; render(); }
+    },
+    subject(v) { M.draft.subject = v; touchDraft(); refreshChecks(); },
+    body(v) { M.draft.body = v; touchDraft(); refreshChecks(); },
+    ask(v) { M.draft.ask = v; touchDraft(); },
+    sig(v, el) { P.signatures[el.dataset.kind][el.dataset.field] = v; save(); },
+    dlg(v, el) { S.dialog.data[el.dataset.field] = v; S.dialog.error = ''; },
+  };
+  const CHANGE = {
+    from(v) { const d = M.draft; d.from = v; d.style = account(v).sig; touchDraft(); render(); },
+    files(v, el) {
+      for (const f of Array.from(el.files || [])) {
+        if (EXECUTABLE.test(f.name)) { toast(`${f.name} can’t be attached: programs are blocked for safety.`); continue; }
+        M.draft.attachments.push({ name: f.name, size: f.size });
+      }
+      el.value = '';
+      touchDraft();
+      render();
+    },
+    watch(v, el) { M.draft.watch = el.checked; touchDraft(); },
+    'acct-sig'(v, el) { const a = account(el.dataset.id); if (a) { a.sig = v; save(); render(); } },
+    nmode(v) { P.notify.mode = v; save(); render(); },
+    'quiet-from'(v) { if (v) { P.notify.quiet.from = v; save(); } },
+    'quiet-to'(v) { if (v) { P.notify.quiet.to = v; save(); } },
+    'quiet-vip'(v, el) { P.notify.quiet.vip = el.checked; save(); },
+    dlg(v, el) { S.dialog.data[el.dataset.field] = v; S.dialog.error = ''; if (el.dataset.redraw) renderDialog(); },
+  };
+
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-act]');
+    if (S.menu && !e.target.closest('.menu-wrap')) {
+      S.menu = null;
+      if (!t) { render(); return; }
+    }
+    if (!t || t.disabled || t.getAttribute('aria-disabled') === 'true') return;
+    const fn = ACT[t.dataset.act];
+    if (!fn) return;
+    e.preventDefault();
+    fn(t.dataset.arg != null ? t.dataset.arg : '', t, e);
+  });
+  document.addEventListener('input', (e) => {
+    const b = e.target.dataset && e.target.dataset.bind;
+    if (b && BIND[b]) BIND[b](e.target.value, e.target);
+  });
+  document.addEventListener('change', (e) => {
+    const c = e.target.dataset && e.target.dataset.change;
+    if (c && CHANGE[c]) CHANGE[c](e.target.value, e.target);
+  });
+  document.addEventListener('submit', (e) => {
+    const f = e.target.closest('form[data-form]');
+    if (!f) return;
+    e.preventDefault();
+    if (FORM[f.dataset.form]) FORM[f.dataset.form](f);
+  });
+  // A typed address turns into a chip when focus moves on to another field (Send and Schedule pick it up too).
+  document.addEventListener('focusout', (e) => {
+    if (e.target.id !== 'to-in' || !M.draft || !M.draft.toText.trim()) return;
+    const next = e.relatedTarget;
+    if (next && next.matches('input, textarea, select')) setTimeout(() => { if (commitRecipients()) render(); }, 0);
+  });
+  document.addEventListener('keydown', (e) => {
+    const t = e.target;
+    if (t.id === 'to-in' && M.draft) {
+      if ((e.key === 'Enter' || e.key === ',' || e.key === ';') && t.value.trim()) { e.preventDefault(); M.draft.toText = t.value; commitRecipients(); S.focus = '#to-in'; render(); return; }
+      if (e.key === 'Backspace' && !t.value && M.draft.to.length) { M.draft.to.pop(); touchDraft(); S.focus = '#to-in'; render(); return; }
+    }
+    if (e.key === 'Escape') {
+      if (dlg.open) return;
+      if (S.menu) { const id = S.menu; S.menu = null; S.focus = `[data-act="menu"][data-arg="${id}"]`; render(); e.preventDefault(); return; }
+      if (S.drawer) { ACT.drawer('0'); return; }
+      if (S.view === 'mail' && S.searching) { ACT.search(); return; }
+      if (S.view === 'mail' && S.size === 'phone' && S.pane === 'read') ACT['back-list']();
+      return;
+    }
+    if (S.menu && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      const items = $$('.menu button', app), i = items.indexOf(document.activeElement);
+      const n = items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length];
+      if (n) { n.focus(); e.preventDefault(); }
+      return;
+    }
+    // shortcuts in the mail view: c compose, / search, j and k next and previous, e archive, r reply, s star
+    if (e.metaKey || e.ctrlKey || e.altKey || dlg.open || S.view !== 'mail' || document.documentElement.classList.contains('splash')) return;
+    if (t.closest && t.closest('input, textarea, select, [contenteditable="true"]')) return;
+    const list = visible(), i = list.findIndex((m) => m.id === S.sel), cur = msg(S.sel);
+    if (e.key === 'c') { e.preventDefault(); openCompose(); }
+    else if (e.key === '/') { e.preventDefault(); if (S.searching) $('#q').focus(); else ACT.search(); }
+    else if (e.key === 'j' && list[i + 1]) ACT.open(list[i + 1].id);
+    else if (e.key === 'k' && i > 0) ACT.open(list[i - 1].id);
+    else if (e.key === 'e' && cur && ['inbox', 'later', 'snoozed'].includes(cur.folder)) ACT.archive(cur.id);
+    else if (e.key === 'r' && cur && !['sent', 'blocked'].includes(cur.folder)) { e.preventDefault(); ACT.reply(cur.id); }
+    else if (e.key === 's' && cur && cur.folder !== 'blocked') ACT.star(cur.id);
+  });
+
+  // ---------- time passing: snoozes come back, scheduled mail goes out, new mail arrives ----------
+  let lastDay = new Date().toDateString();
+  function tick() {
+    const now = Date.now();
+    let changed = false;
+    for (const m of M.messages) {
+      if (m.folder === 'snoozed' && m.snoozeUntil && m.snoozeUntil <= now) {
+        m.folder = 'inbox'; m.unread = true; m.back = m.snoozeUntil; delete m.snoozeUntil; changed = true;
+        if (shouldNotify(m)) showNotice(m);
+      }
+      if (m.scheduled && m.scheduled <= now) { m.time = m.scheduled; m.scheduled = null; changed = true; }
+    }
+    const day = new Date().toDateString();
+    if (changed) save();
+    if (changed || day !== lastDay) { lastDay = day; render(); }
+  }
+  function arrive() {
+    if (M.queue >= ARRIVALS.length) return;
+    const m = deliver(ARRIVALS[M.queue], Date.now());
+    M.queue++;
+    save();
+    render();
+    if (shouldNotify(m)) showNotice(m);
+  }
+  function scheduleArrivals() {
+    const start = M.queue;
+    for (let k = start; k < ARRIVALS.length; k++) setTimeout(arrive, ARRIVE_AFTER[k - start] * 1000);
+  }
+
+  // ---------- splash: first launch only ----------
+  function splash(done) {
+    const root = document.documentElement;
+    if (!root.classList.contains('splash')) return done();
+    const el = $('#splash'), image = $('image', el), src = 'assets/kairn-labs-mark.svg';
+    const theme = $('meta[name="theme-color"]'), themeWas = theme.content;
+    theme.content = '#FFFFFF';
+    app.inert = true;
+    let over = false;
+    const finish = (shown) => {
+      if (over) return;
+      over = true;
+      if (shown) { try { localStorage.setItem('quill.splash', '1'); } catch (e) { /* shows again next time */ } }
+      const fade = shown ? (reduceMotion() ? 300 : 500) : 200;
+      el.style.transitionDuration = fade + 'ms';
+      el.classList.add('out');
+      setTimeout(() => { root.classList.remove('splash'); el.remove(); app.inert = false; theme.content = themeWas; done(); }, fade + 20);
+    };
+    // No mark file, no splash: never stand in another logo.
+    const giveUp = setTimeout(() => finish(false), 4000);
+    const probe = new Image();
+    probe.onload = () => {
+      clearTimeout(giveUp);
+      image.setAttribute('href', src);
+      image.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', src);
+      requestAnimationFrame(() => el.classList.add('in'));
+      setTimeout(() => finish(true), (reduceMotion() ? 400 : 800) + 1500); // fade and scale in, then hold about 1.5 s
+    };
+    probe.onerror = () => { clearTimeout(giveUp); finish(false); };
+    probe.src = src;
+  }
+
+  // ---------- start ----------
+  const mqPhone = window.matchMedia('(max-width: 759px)'), mqWide = window.matchMedia('(min-width: 1100px)');
+  const sizeNow = () => (mqPhone.matches ? 'phone' : mqWide.matches ? 'wide' : 'mid');
+  function onResize() {
+    const s = sizeNow();
+    if (s === S.size) return;
+    S.size = s;
+    S.drawer = false;
+    S.menu = null;
+    if (s !== 'phone') S.pane = 'list';
+    render();
+  }
+  mqPhone.addEventListener('change', onResize);
+  mqWide.addEventListener('change', onResize);
+
+  load();
+  S.size = sizeNow();
+  render();
+  splash(scheduleArrivals);
+  AI.init().then(() => { if (S.view === 'compose') render(); });
+  setInterval(tick, 30000);
+})();
+</script>
+</body>
+</html>
