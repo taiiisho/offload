@@ -23,3 +23,7 @@ Shortcuts: Ctrl/⌘ K to search or type a change, 1–5 to switch pages, N to ad
 ## Data
 
 On claude.ai the app keeps its data in the artifact's database: `tasks`, `days`, `log`, `checkins`, `life`, `notes`, `briefs` and `reviews` collections, plus the `settings/main`, `settings/week` and `settings/profile` documents. The assistant chat and the brain dump are stored per person under `data/users/<id>/`, which only that person can read. Opened anywhere else, it saves to the browser's local storage instead.
+
+## Also here: Quill
+
+`quill/` holds Quill, a unified email client built from a separate design, with an AI writing service. Netlify deploys it from this repo using `netlify.toml`. See `quill/README.md`.
