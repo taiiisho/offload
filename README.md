@@ -26,4 +26,4 @@ On claude.ai the app keeps its data in the artifact's database: `tasks`, `days`,
 
 ## Also here: Quill
 
-`quill/` holds Quill, a unified email client built from a separate design. See `quill/README.md`.
+`quill/` holds Quill, a unified email client built from a separate design, with an AI writing service. Netlify deploys it from this repo using `netlify.toml`. See `quill/README.md`.

@@ -423,7 +423,8 @@ select.input { padding-right: 32px; appearance: none; -webkit-appearance: none;
 .checks .ok .mk { background: var(--ok-soft); color: var(--ok); }
 .checks .warn .mk { background: var(--warn-soft); color: var(--warn); }
 .checks .note .mk { background: rgba(28, 27, 34, .06); color: var(--ink-2); }
-.checks .link-btn { padding: 0; font-size: 13px; }
+.checks .link-btn, .link-btn.inline { padding: 0; font-size: inherit; }
+.link-btn.inline:hover { background: transparent; text-decoration: underline; }
 .checks .link-btn:hover { background: transparent; text-decoration: underline; }
 
 .settings { width: 100%; max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px; padding: 12px 8px 48px; }
@@ -982,24 +983,90 @@ html.splash #splash { display: flex; }
 
   // ---------- AI writing help ----------
   // On claude.ai Quill writes with Claude. Anywhere else a small writer on this device handles drafts and quick fixes.
+  // Claude is reached one of two ways: through claude.ai when Quill runs there as an artifact, or through this site's
+  // own AI service (/api/ai, a Netlify Function that holds the API key). With neither, the writer on this device helps.
+  const SERVICE = '/api/ai';
   const AI = {
     sample: null,
+    service: null, // { code } once the site's service answers; code: it wants an access code
+    code: '',
+    rejected: false, // the service turned the saved access code down
     async init() {
+      try { AI.code = localStorage.getItem('quill.aiCode') || ''; } catch (e) { AI.code = ''; }
       const has = () => !!(window.claude && typeof window.claude.use === 'function');
       if (!has() && window.self !== window.top) for (let i = 0; i < 25 && !has(); i++) await sleep(100);
-      if (!has()) return;
-      try { AI.sample = await window.claude.use('sample'); } catch (e) { AI.sample = null; }
-    },
-    async ask(prompt) {
+      if (has()) { try { AI.sample = await window.claude.use('sample'); } catch (e) { AI.sample = null; } }
+      if (AI.sample || location.protocol === 'file:') return;
       try {
-        const r = await AI.sample([{ role: 'user', content: prompt }], { cache: false });
-        return String((r && r.text) || '').trim();
-      } catch (e) {
-        if (e && ['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].includes(e.code)) AI.sample = null;
-        throw e;
+        const r = await fetch(SERVICE, { headers: { accept: 'application/json' }, cache: 'no-store' });
+        const j = r.ok && /json/.test(r.headers.get('content-type') || '') ? await r.json() : null;
+        AI.service = j && j.ready ? { code: !!j.code } : null;
+      } catch (e) { AI.service = null; }
+    },
+    // claude: through claude.ai; service: through this site; locked: the service wants an access code; basic: this device only
+    get mode() {
+      if (AI.sample) return 'claude';
+      if (!AI.service) return 'basic';
+      return AI.service.code && (!AI.code || AI.rejected) ? 'locked' : 'service';
+    },
+    get live() { return AI.mode === 'claude' || AI.mode === 'service'; },
+    // Ask Claude for a draft or a fix. onText gets the whole text so far while it streams in.
+    async write(task, prompt, onText, signal) {
+      if (AI.mode === 'claude') {
+        try {
+          const r = await AI.sample([{ role: 'user', content: prompt }], { cache: false, signal, onText: ({ text }) => onText(text) });
+          return String((r && r.text) || '').trim();
+        } catch (e) {
+          if (e && ['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].includes(e.code)) AI.sample = null;
+          throw e;
+        }
       }
+      const headers = { 'content-type': 'application/json' };
+      if (AI.code) headers['x-quill-code'] = AI.code;
+      const res = await fetch(SERVICE, { method: 'POST', headers, body: JSON.stringify(task), signal });
+      if (!res.ok) {
+        let j = null;
+        try { j = await res.json(); } catch (e) { j = null; }
+        throw aiError((j && j.error) || 'failed', j && j.message);
+      }
+      // One JSON object per line: text as Claude writes it, then done or error.
+      const reader = res.body.getReader(), dec = new TextDecoder();
+      let buf = '', text = '', done = false;
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        buf += dec.decode(chunk.value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, i).trim();
+          buf = buf.slice(i + 1);
+          if (!line) continue;
+          const ev = JSON.parse(line);
+          if (ev.t === 'text') { text += ev.v; onText(text); }
+          else if (ev.t === 'done') done = true;
+          else if (ev.t === 'error') throw aiError(ev.code, ev.message);
+        }
+      }
+      if (!done) throw aiError('cut_off');
+      return text.trim();
     },
   };
+  const aiError = (code, message) => Object.assign(new Error(message || code), { code });
+  const isAbort = (e) => !!e && (e.name === 'AbortError' || e.code === 'cancelled');
+  // What to tell the person when Claude couldn't help.
+  function aiTrouble(e) {
+    const code = e && e.code;
+    if (code === 'bad_code') { AI.rejected = true; return 'That AI access code didn’t work. Check it in Settings.'; }
+    if (code === 'not_configured') { AI.service = null; return 'The AI service isn’t set up yet, so Quill will use basic writing help.'; }
+    if (code === 'refusal') return 'Claude didn’t write this one. Try rewording what to say.';
+    if (code === 'busy' || code === 'rate_limited') return 'Claude is busy right now. Try again in a moment.';
+    if (code === 'cut_off') return 'The text was cut off before it finished. Try again, or pick a shorter length.';
+    if (code === 'too_long' && e.message) return e.message;
+    return 'Couldn’t write that just now. Try again.';
+  }
+  const draftTask = (d, orig, to) => ({ kind: 'draft', style: d.style, length: d.length, ask: d.ask, to, reply: orig ? { from: orig.from.name, subject: orig.subject, body: orig.body } : null });
+  const fixTask = (kind, lang, body) => (lang ? { kind: 'fix', fix: 'translate', language: lang, body } : { kind: 'fix', fix: kind, body });
+  // Prompts for Claude on claude.ai. Keep them in step with netlify/functions/ai.mjs, which builds the same ones for the site's service.
   const LENGTH = { short: 'Short: one or two sentences.', medium: 'Medium: a short paragraph or two.', detailed: 'Detailed: a few paragraphs that cover the specifics.' };
   const TONE = {
     professional: 'Professional: a formal greeting such as "Hi Dana," and a clear, courteous voice.',
@@ -1487,7 +1554,7 @@ html.splash #splash { display: flex; }
             <div class="frow"><label class="lbl" for="subject">Subject</label><input id="subject" class="bare subject-in" type="text" value="${esc(d.subject)}" data-bind="subject" autocomplete="off"></div>
             <div class="editor">
               <label class="sr" for="body">Message</label>
-              <textarea id="body" data-bind="body" placeholder="Write your message, or tell the AI assistant what to say.">${esc(d.body)}</textarea>
+              <textarea id="body" data-bind="body" placeholder="Write your message, or tell the AI assistant what to say." ${busy ? 'readonly aria-busy="true"' : ''}>${esc(d.body)}</textarea>
               <div class="sig-note">Signature added automatically · ${STYLES[d.style]}</div>
               <div class="sig ${d.style}">${sigLines(d.style, a).map(([k, v, ph]) => `<div class="${k}">${v ? esc(v) : `<span class="ph">${esc(ph || '')}</span>`}</div>`).join('')}</div>
             </div>
@@ -1508,7 +1575,7 @@ html.splash #splash { display: flex; }
         <aside class="compose-side" aria-label="AI writing assistant">
           <section class="card pad-lg">
             <div class="ai-head">${icon('sparkle', 18)}AI assistant</div>
-            <p class="ai-note">${AI.sample ? 'Writes with Claude.' : 'Basic writing help on this device. Open Quill on claude.ai to write with Claude.'}</p>
+            <p class="ai-note">${{ claude: 'Writes with Claude.', service: 'Writes with Claude.', locked: 'Basic writing help on this device until you add the AI access code. <button type="button" class="link-btn inline" data-act="goto-ai">Add code</button>', basic: 'Basic writing help on this device. Claude isn’t connected here.' }[AI.mode]}</p>
             <div class="field"><label for="ask" style="font-size:13px;color:var(--ink-3)">Tell it what to say</label>
               <textarea id="ask" class="input" rows="3" data-bind="ask" placeholder="e.g. Say yes to Tuesday 10am and that I’ll bring the new drawings">${esc(d.ask)}</textarea></div>
             <div class="field"><span class="flabel" id="len-l" style="font-size:13px;color:var(--ink-3)">Length</span>
@@ -1534,6 +1601,7 @@ html.splash #splash { display: flex; }
   const SECTIONS = [
     ['accounts', 'Accounts', 'person'], ['appearance', 'Appearance', 'palette'], ['signatures', 'Signatures', 'sign'],
     ['filters', 'Email filters', 'filter'], ['safety', 'Spam and safety', 'shield'], ['notifications', 'Notifications', 'bell'],
+    ['ai', 'AI writing', 'sparkle'],
   ];
   function secSummary(id) {
     const c = counts();
@@ -1544,6 +1612,7 @@ html.splash #splash { display: flex; }
       filters: P.rules.filter((r) => r.on).length + ' of ' + P.rules.length + ' rules on',
       safety: c.blocked ? c.blocked + ' blocked to review' : 'Nothing blocked',
       notifications: { all: 'All new email', important: 'Important only', vip: 'VIP senders only' }[P.notify.mode],
+      ai: { claude: 'Claude, through claude.ai', service: 'Claude', locked: 'Needs the access code', basic: 'Basic help on this device' }[AI.mode],
     }[id];
   }
   function settingsView() {
@@ -1647,6 +1716,23 @@ html.splash #splash { display: flex; }
         </div>`,
       };
     },
+  };
+
+  SECTION.ai = function () {
+    const mode = AI.mode;
+    const [tone, tag, line] = {
+      claude: ['ok', 'Claude', 'Connected to Claude through claude.ai.'],
+      service: ['ok', 'Claude', 'Connected to Claude through this site’s AI service.'],
+      locked: ['warn', 'Needs code', AI.rejected ? 'The access code was turned down. Enter the current one.' : 'This site’s AI service needs an access code before it writes with Claude.'],
+      basic: ['grey', 'Basic', 'Claude isn’t connected, so drafts and quick fixes use the basic writer on this device. Translating needs Claude.'],
+    }[mode];
+    const codeForm = AI.service && AI.service.code ? `<form class="item" data-form="ai-code" style="flex-wrap:wrap;align-items:flex-end">
+        <div class="field" style="flex:1;min-width:200px"><label for="ai-code">Access code</label><input id="ai-code" class="input" type="password" autocomplete="off" value="${esc(S.aiCode != null ? S.aiCode : AI.code)}" data-bind="aiCode" placeholder="From whoever runs this site"></div>
+        <button type="submit" class="btn btn-dark">Save code</button></form>` : '';
+    return {
+      title: 'AI writing', desc: 'Drafts and quick fixes in compose. The access code stays in this browser.',
+      body: `<div class="card list-card"><div class="item"><div class="txt"><span class="t">Status</span><span class="d">${esc(line)}</span></div><span class="tag ${tone}">${tag}</span></div>${codeForm}</div>`,
+    };
   };
 
   // ---------- dialogs ----------
@@ -1874,26 +1960,36 @@ html.splash #splash { display: flex; }
     if (!d.body.trim()) { toast('Write something first.'); S.focus = '#body'; render(); return false; }
     return true;
   }
+  // Claude's text goes straight into the message box as it arrives; the draft itself changes once the text is complete.
+  let aiAbort = null;
+  const showLive = (d) => (t) => { const el = $('#body'); if (el && M.draft === d) { el.value = t; el.scrollTop = el.scrollHeight; } };
   async function writeDraft() {
     const d = M.draft;
     if (!d || S.busy) return;
     if (!d.ask.trim()) { toast('Tell the assistant what to say first.'); S.focus = '#ask'; render(); return; }
-    const orig = d.replyTo && msg(d.replyTo), r = d.to[0], prev = d.body;
+    const orig = d.replyTo && msg(d.replyTo), r = d.to[0], prev = d.body, to = r ? r.name || r.email : '';
     S.busy = 'write';
     render();
+    aiAbort = new AbortController();
     try {
-      const text = AI.sample ? await AI.ask(draftPrompt(d, orig, r ? r.name || r.email : '')) : Basic.write({ ask: d.ask, length: d.length, style: d.style, name: r ? firstName(r.name) : '', orig });
+      const text = AI.live ? await AI.write(draftTask(d, orig, to), draftPrompt(d, orig, to), showLive(d), aiAbort.signal) : Basic.write({ ask: d.ask, length: d.length, style: d.style, name: r ? firstName(r.name) : '', orig });
+      S.busy = null;
       if (M.draft !== d) return;
+      if (!text) throw aiError('failed');
       d.body = text;
       d.aiBody = text;
       touchDraft();
-      S.busy = null;
       render();
       toast('Draft written', () => { d.body = prev; d.aiBody = null; touchDraft(); render(); });
     } catch (e) {
       S.busy = null;
+      if (M.draft !== d || isAbort(e)) return;
+      const note = aiTrouble(e); // may change how Quill writes from now on, so it goes before the redraw
+      d.body = prev;
       render();
-      toast('Couldn’t write a draft just now. Try again.');
+      toast(note);
+    } finally {
+      aiAbort = null;
     }
   }
   const FIX_DONE = { shorter: 'Made it shorter', friendly: 'Made it friendlier', formal: 'Made it more formal', grammar: 'Fixed grammar' };
@@ -1904,10 +2000,11 @@ html.splash #splash { display: flex; }
     S.busy = kind;
     S.menu = null;
     render();
+    aiAbort = new AbortController();
     try {
-      const text = AI.sample ? await AI.ask(fixPrompt(lang ? `Translate it into ${lang}.` : FIXES[kind].ask, d.body)) : Basic[kind](d.body);
-      if (M.draft !== d) return;
+      const text = AI.live ? await AI.write(fixTask(kind, lang, d.body), fixPrompt(lang ? `Translate it into ${lang}.` : FIXES[kind].ask, d.body), showLive(d), aiAbort.signal) : Basic[kind](d.body);
       S.busy = null;
+      if (M.draft !== d) return;
       if (!text.trim() || text.trim() === prev.trim()) { render(); toast(kind === 'grammar' ? 'No fixes needed.' : 'Nothing to change.'); return; }
       if (d.aiBody === prev) d.aiBody = text;
       d.body = text;
@@ -1916,8 +2013,13 @@ html.splash #splash { display: flex; }
       toast(lang ? 'Translated into ' + lang : FIX_DONE[kind], () => { d.body = prev; touchDraft(); render(); });
     } catch (e) {
       S.busy = null;
+      if (M.draft !== d || isAbort(e)) return;
+      const note = aiTrouble(e); // may change how Quill writes from now on, so it goes before the redraw
+      d.body = prev;
       render();
-      toast('Couldn’t do that just now. Try again.');
+      toast(note);
+    } finally {
+      aiAbort = null;
     }
   }
 
@@ -1961,7 +2063,7 @@ html.splash #splash { display: flex; }
     'close-settings'() { if (S.from === 'compose' && M.draft) { S.view = 'compose'; S.from = null; render(); window.scrollTo(0, 0); } else goMail(); },
     sec(id) { S.sec = id || null; render(); window.scrollTo(0, 0); },
     menu(id) {
-      if (id === 'translate' && !AI.sample) { toast('Translating needs Claude. Open Quill on claude.ai to translate.'); return; }
+      if (id === 'translate' && !AI.live) { toast(AI.mode === 'locked' ? 'Add the AI access code in Settings to translate.' : 'Translating needs Claude, which isn’t connected here.'); return; }
       S.menu = S.menu === id ? null : id;
       S.focus = S.menu ? '.menu button' : null;
       render();
@@ -2013,11 +2115,13 @@ html.splash #splash { display: flex; }
 
     // compose
     'close-compose'() {
+      if (aiAbort) aiAbort.abort();
       if (draftHasWork(M.draft)) { save(); toast('Draft saved'); } else M.draft = null;
       save();
       goMail();
     },
     discard() {
+      if (aiAbort) aiAbort.abort();
       const d = M.draft;
       M.draft = null;
       save();
@@ -2066,6 +2170,17 @@ html.splash #splash { display: flex; }
       const sec = $('#sec-signatures');
       if (sec) sec.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth' });
       const input = $(`#s-${M.draft ? M.draft.style : 'professional'}-name`);
+      if (input) input.focus({ preventScroll: !!sec });
+    },
+
+    'goto-ai'() {
+      S.from = S.view === 'compose' ? 'compose' : null;
+      S.view = 'settings';
+      S.sec = S.size === 'phone' ? 'ai' : null;
+      render();
+      const sec = $('#sec-ai');
+      if (sec) sec.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth' });
+      const input = $('#ai-code');
       if (input) input.focus({ preventScroll: !!sec });
     },
 
@@ -2134,6 +2249,15 @@ html.splash #splash { display: flex; }
       toast('Reply sent to ' + m.from.name);
     },
     confirm() { const d = S.dialog; closeDialog(); if (d && d.run) d.run(); },
+    'ai-code'() {
+      const v = String(S.aiCode != null ? S.aiCode : AI.code).trim();
+      AI.code = v;
+      AI.rejected = false;
+      S.aiCode = null;
+      try { if (v) localStorage.setItem('quill.aiCode', v); else localStorage.removeItem('quill.aiCode'); } catch (e) { /* kept for this visit */ }
+      render();
+      toast(v ? 'Access code saved' : 'Access code removed');
+    },
     account() {
       const v = S.dialog.data, name = v.name.trim(), email = v.email.trim().toLowerCase();
       if (!name) { S.dialog.error = 'Give the account a name.'; return renderDialog(); }
@@ -2175,6 +2299,7 @@ html.splash #splash { display: flex; }
     ask(v) { M.draft.ask = v; touchDraft(); },
     sig(v, el) { P.signatures[el.dataset.kind][el.dataset.field] = v; save(); },
     dlg(v, el) { S.dialog.data[el.dataset.field] = v; S.dialog.error = ''; },
+    aiCode(v) { S.aiCode = v; },
   };
   const CHANGE = {
     from(v) { const d = M.draft; d.from = v; d.style = account(v).sig; touchDraft(); render(); },
@@ -2341,7 +2466,7 @@ html.splash #splash { display: flex; }
   S.size = sizeNow();
   render();
   splash(scheduleArrivals);
-  AI.init().then(() => { if (S.view === 'compose') render(); });
+  AI.init().then(() => { if (S.view !== 'mail') render(); });
   setInterval(tick, 30000);
 })();
 </script>

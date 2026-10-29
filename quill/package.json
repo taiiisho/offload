@@ -1,0 +1,12 @@
+{
+  "name": "quill",
+  "private": true,
+  "description": "Quill, one calm inbox for every account, with an AI writing service on Netlify.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0"
+  }
+}
